@@ -13,7 +13,7 @@ comptime ConstCStringPointer = OptionalUnsafePointer[
 ]
 """C `const char*` type."""
 
-comptime c_void = OptionalUnsafePointer[NoneType, MutExternalOrigin]
+comptime c_void = OptionalUnsafePointer[NoneType, MutUntrackedOrigin]
 """C `void*` type."""
 
 # ===-----------------------------------------------------------------------===#
@@ -37,10 +37,10 @@ struct KPEPEvent(Copyable):
     # Aliases
     # ===-----------------------------------------------------------------------===#
 
-    comptime Pointer = OptionalUnsafePointer[Self, MutExternalOrigin]
+    comptime Pointer = OptionalUnsafePointer[Self, MutUntrackedOrigin]
     """Pointer to a KPEPEvent."""
 
-    comptime PointerPointer = OptionalUnsafePointer[Self.Pointer, MutExternalOrigin]
+    comptime PointerPointer = OptionalUnsafePointer[Self.Pointer, MutUntrackedOrigin]
     """Pointer to a pointer to a KPEPEvent."""
 
     # ===-----------------------------------------------------------------------===#
@@ -96,7 +96,7 @@ struct KPEPDb(Copyable):
     # Aliases
     # ===-----------------------------------------------------------------------===#
 
-    comptime Pointer = OptionalUnsafePointer[KPEPDb, MutExternalOrigin]
+    comptime Pointer = OptionalUnsafePointer[KPEPDb, MutUntrackedOrigin]
     """Pointer to a `KPEPDb`."""
 
     # ===-----------------------------------------------------------------------===#
@@ -174,7 +174,7 @@ struct KPEPConfig(Copyable):
     # Aliases
     # ===-----------------------------------------------------------------------===#
 
-    comptime Pointer = OptionalUnsafePointer[Self, MutExternalOrigin]
+    comptime Pointer = OptionalUnsafePointer[Self, MutUntrackedOrigin]
     """Pointer to `KPEPConfig`."""
 
     # ===-----------------------------------------------------------------------===#
@@ -188,22 +188,22 @@ struct KPEPConfig(Copyable):
     Initially it is set to `NULL`.
     """
 
-    var ev_map: OptionalUnsafePointer[c_size_t, MutExternalOrigin]
+    var ev_map: OptionalUnsafePointer[c_size_t, MutUntrackedOrigin]
     """Maps event index -> absolute counter slot (`size_of[UInt]() * counter_count`), initially set to 0.
 
     `kpep_config_kpc_map` copies from this array, optionally subtracting
     `fixed_counter_count` to produce class-relative indices.
     """
 
-    var ev_idx: OptionalUnsafePointer[c_size_t, MutExternalOrigin]
+    var ev_idx: OptionalUnsafePointer[c_size_t, MutUntrackedOrigin]
     """Maps counter slot -> event index (`size_of[UInt]() * counter_count`),
     initially set to `UInt.MAX` (-1). It is the inverse of `ev_map`.
     """
 
-    var flags: OptionalUnsafePointer[UInt32, MutExternalOrigin]
+    var flags: OptionalUnsafePointer[UInt32, MutUntrackedOrigin]
     """Per-counter flags (`size_of[UInt32]() * counter_count`), initially 0."""
 
-    var kpc_periods: OptionalUnsafePointer[UInt64, MutExternalOrigin]
+    var kpc_periods: OptionalUnsafePointer[UInt64, MutUntrackedOrigin]
     """KPC sampling periods (`size_of[UInt64]() * counter_count`), initially 0."""
 
     var event_count: c_size_t

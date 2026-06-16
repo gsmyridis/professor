@@ -1,10 +1,16 @@
 [workspace]
 authors = ["gsmyridis <georgesmyr@icloud.com>"]
-channels = ["https://conda.modular.com/max", "conda-forge"]
+channels = [
+  "https://conda.modular.com/max-nightly",
+  "https://conda.modular.com/max",
+  "conda-forge"
+]
 name = "professor"
 platforms = ["osx-arm64"]
 version = "0.1.0"
 
 [tasks]
+main = "mojo run -I src examples/main.mojo"
 
 [dependencies]
+mojo = ">=1.0.0b3.dev2026061606,<2"
