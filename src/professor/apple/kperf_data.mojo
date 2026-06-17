@@ -1,4 +1,5 @@
-from std.ffi import c_char, c_int, c_size_t, OwnedDLHandle
+from std.os import abort
+from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
 from std.memory import OptionalUnsafePointer
 from std.sys import size_of
 
@@ -29,6 +30,7 @@ comptime KPEP_ARCH_ARM64: UInt32 = 3
 # KPEP Event
 # ===-----------------------------------------------------------------------===#
 
+
 @fieldwise_init
 struct KPEPEvent(Copyable):
     """KPEP event."""
@@ -40,7 +42,9 @@ struct KPEPEvent(Copyable):
     comptime Pointer = OptionalUnsafePointer[Self, MutUntrackedOrigin]
     """Pointer to a KPEPEvent."""
 
-    comptime PointerPointer = OptionalUnsafePointer[Self.Pointer, MutUntrackedOrigin]
+    comptime PointerPointer = OptionalUnsafePointer[
+        Self.Pointer, MutUntrackedOrigin
+    ]
     """Pointer to a pointer to a KPEPEvent."""
 
     # ===-----------------------------------------------------------------------===#
@@ -85,9 +89,11 @@ struct KPEPEvent(Copyable):
     alongside it.
     """
 
+
 # ===-----------------------------------------------------------------------===#
 # KPEP Database
 # ===-----------------------------------------------------------------------===#
+
 
 struct KPEPDb(Copyable):
     """KPEP Database."""
@@ -164,12 +170,13 @@ struct KPEPDb(Copyable):
     var power_counter_bits: UInt32
     """Bitmap of available power counters."""
 
+
 # ===-----------------------------------------------------------------------===#
 # KPEP Config
 # ===-----------------------------------------------------------------------===#
 
-struct KPEPConfig(Copyable):
 
+struct KPEPConfig(Copyable):
     # ===-----------------------------------------------------------------------===#
     # Aliases
     # ===-----------------------------------------------------------------------===#
@@ -284,7 +291,389 @@ def kpep_config_error_desc(code: Int) -> String:
 
 
 # ===-----------------------------------------------------------------------===#
-# Function pointer types
+# Library Handle
+# ===-----------------------------------------------------------------------===#
+
+
+struct _KPEPDataHandle(Movable):
+    var dylib: OwnedDLHandle
+    var symbols: _KPEPSymbols
+
+    def __init__(out self) raises:
+        self.dylib = OwnedDLHandle(
+            "/System/Library/PrivateFrameworks/kperfdata.framework/kperfdata"
+        )
+        self.symbols = _KPEPSymbols(self.dylib)
+
+
+def _init_library() -> _KPEPDataHandle:
+    try:
+        return _KPEPDataHandle()
+    except:
+        abort("failed to dynamically link to the `kperfdata` framework")
+
+
+comptime _KPEP_DATA_LIBRARY = _Global["KPEP_DATA_LIBRARY", _init_library]
+"""Global handle for the kperfdata library."""
+
+
+@always_inline
+def _sym() -> UnsafePointer[_KPEPSymbols, ImmutUntrackedOrigin]:
+    try:
+        return UnsafePointer(to=_KPEP_DATA_LIBRARY.get_or_create_ptr()[].symbols)
+    except e:
+        abort(t"kperfdata library unavailable: {e}")
+
+
+@always_inline
+def kpep_config_create(
+    db: KPEPDb.Pointer,
+    cfg_ptr: OptionalUnsafePointer[KPEPConfig.Pointer, MutAnyOrigin],
+) -> c_int:
+    """Creates a new configuration builder for a database.
+
+    Args:
+        db: Database handle previously obtained from `kpep_db_create`.
+        cfg_ptr: Pointer to receive the newly allocated config. Free it with
+            `kpep_config_free`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_create(db, cfg_ptr)
+
+
+@always_inline
+def kpep_config_free(cfg: KPEPConfig.Pointer):
+    """Frees a config previously allocated by `kpep_config_create`."""
+    _sym()[].kpep_config_free(cfg)
+
+
+@always_inline
+def kpep_config_add_event(
+    cfg: KPEPConfig.Pointer,
+    ev_ptr: OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin],
+    flag: UInt32,
+    err: OptionalUnsafePointer[UInt32, MutAnyOrigin],
+) -> c_int:
+    """Adds an event to a configuration.
+
+    Args:
+        cfg: Config to modify.
+        ev_ptr: Pointer to an event pointer obtained from `kpep_db_event`.
+        flag: 0 to count in all modes; 1 for user space only.
+        err: Optional error bitmap pointer. If the return value is
+            `KPEP_CONFIG_ERROR_CONFLICTING_EVENTS`, each set bit identifies a
+            conflicting event index.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_add_event(cfg, ev_ptr, flag, err)
+
+
+@always_inline
+def kpep_config_remove_event(cfg: KPEPConfig.Pointer, idx: c_size_t) -> c_int:
+    """Removes the event at `idx` from a configuration.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_remove_event(cfg, idx)
+
+
+@always_inline
+def kpep_config_force_counters(cfg: KPEPConfig.Pointer) -> c_int:
+    """Marks a configuration as needing force-acquired counters.
+
+    After calling this, `kpep_config_kpc` produces register values that require
+    `kpc_force_all_ctrs_set(1)` to have been called first.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_force_counters(cfg)
+
+
+@always_inline
+def kpep_config_events_count(
+    cfg: KPEPConfig.Pointer,
+    count: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+) -> c_int:
+    """Gets the number of events added to a config.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_events_count(cfg, count)
+
+
+@always_inline
+def kpep_config_events(
+    cfg: KPEPConfig.Pointer,
+    buf: OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin],
+    buf_size: c_size_t,
+) -> c_int:
+    """Gets all event pointers from a configuration.
+
+    Args:
+        cfg: Config to query.
+        buf: Buffer to receive event pointers.
+        buf_size: Buffer size in bytes; should be at least
+            `kpep_config_events_count() * size_of[KPEPEvent.Pointer]()`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_events(cfg, buf, buf_size)
+
+
+@always_inline
+def kpep_config_kpc(
+    cfg: KPEPConfig.Pointer,
+    buf: OptionalUnsafePointer[KPCConfig, MutAnyOrigin],
+    buf_size: c_size_t,
+) -> c_int:
+    """Gets KPC register configuration values.
+
+    Args:
+        cfg: Config to query.
+        buf: Buffer to receive register config values.
+        buf_size: Buffer size in bytes; should be at least
+            `kpep_config_kpc_count() * size_of[KPCConfig]()`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_kpc(cfg, buf, buf_size)
+
+
+@always_inline
+def kpep_config_kpc_count(
+    cfg: KPEPConfig.Pointer,
+    count: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+) -> c_int:
+    """Gets the number of KPC register config values.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_kpc_count(cfg, count)
+
+
+@always_inline
+def kpep_config_kpc_classes(
+    cfg: KPEPConfig.Pointer,
+    classes_ptr: OptionalUnsafePointer[UInt32, MutAnyOrigin],
+) -> c_int:
+    """Gets the active KPC counter class mask.
+
+    `classes_ptr` receives a combination of `KPC_CLASS_*_MASK` constants.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_kpc_classes(cfg, classes_ptr)
+
+
+@always_inline
+def kpep_config_kpc_map(
+    cfg: KPEPConfig.Pointer,
+    buf: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+    buf_size: c_size_t,
+) -> c_int:
+    """Gets the mapping from event index to hardware counter slot.
+
+    Args:
+        cfg: Config to query.
+        buf: Buffer to receive one hardware counter slot index per event.
+        buf_size: Buffer size in bytes; should be at least
+            `kpep_config_events_count() * size_of[c_size_t]()`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_config_kpc_map(cfg, buf, buf_size)
+
+
+@always_inline
+def kpep_db_create(
+    name: ConstCStringPointer,
+    db_ptr: OptionalUnsafePointer[KPEPDb.Pointer, MutAnyOrigin],
+) -> c_int:
+    """Opens a KPEP database file.
+
+    Searches `/usr/share/kpep/` or `/usr/local/share/kpep/`.
+
+    Args:
+        name: Database file name, such as `"haswell"` or
+            `"cpu_100000c_1_92fb37c8"`. Pass null to auto-detect the current
+            CPU.
+        db_ptr: Pointer to receive the newly allocated database. Free it with
+            `kpep_db_free`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_create(name, db_ptr)
+
+
+@always_inline
+def kpep_db_free(db: KPEPDb.Pointer):
+    """Frees a database previously allocated by `kpep_db_create`."""
+    _sym()[].kpep_db_free(db)
+
+
+@always_inline
+def kpep_db_name(
+    db: KPEPDb.Pointer,
+    name: OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+) -> c_int:
+    """Gets a database's marketing name, such as `"Apple M1"`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_name(db, name)
+
+
+@always_inline
+def kpep_db_aliases_count(
+    db: KPEPDb.Pointer,
+    count: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+) -> c_int:
+    """Gets the number of event aliases in a database.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_aliases_count(db, count)
+
+
+@always_inline
+def kpep_db_aliases(
+    db: KPEPDb.Pointer,
+    buf: OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+    buf_size: c_size_t,
+) -> c_int:
+    """Gets all alias strings from a database.
+
+    Args:
+        db: Database to query.
+        buf: Buffer to receive alias string pointers.
+        buf_size: Buffer size in bytes; should be at least
+            `kpep_db_aliases_count() * size_of[ConstCStringPointer]()`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_aliases(db, buf, buf_size)
+
+
+@always_inline
+def kpep_db_counters_count(
+    db: KPEPDb.Pointer,
+    classes: UInt8,
+    count: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+) -> c_int:
+    """Gets the number of counters for a class mask.
+
+    `classes` is 1 for fixed, 2 for configurable, or 3 for both.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_counters_count(db, classes, count)
+
+
+@always_inline
+def kpep_db_events_count(
+    db: KPEPDb.Pointer,
+    count: OptionalUnsafePointer[c_size_t, MutAnyOrigin],
+) -> c_int:
+    """Gets the total number of events in a database.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_events_count(db, count)
+
+
+@always_inline
+def kpep_db_events(
+    db: KPEPDb.Pointer,
+    buf: OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin],
+    buf_size: c_size_t,
+) -> c_int:
+    """Gets all event pointers from a database.
+
+    Args:
+        db: Database to query.
+        buf: Buffer to receive event pointers.
+        buf_size: Buffer size in bytes; should be at least
+            `kpep_db_events_count() * size_of[KPEPEvent.Pointer]()`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_events(db, buf, buf_size)
+
+
+@always_inline
+def kpep_db_event(
+    db: KPEPDb.Pointer,
+    name: ConstCStringPointer,
+    ev_ptr: OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin],
+) -> c_int:
+    """Looks up one event by name or alias.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_db_event(db, name, ev_ptr)
+
+
+@always_inline
+def kpep_event_name(
+    ev: KPEPEvent.Pointer,
+    name: OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+) -> c_int:
+    """Gets an event's unique name, such as `"INST_ALL"`.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_event_name(ev, name)
+
+
+@always_inline
+def kpep_event_alias(
+    ev: KPEPEvent.Pointer,
+    alias: OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+) -> c_int:
+    """Gets an event's alias, such as `"Instructions"`, if one exists.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_event_alias(ev, alias)
+
+
+@always_inline
+def kpep_event_description(
+    ev: KPEPEvent.Pointer,
+    description: OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+) -> c_int:
+    """Gets an event's human-readable description, if available.
+
+    Returns:
+        0 for success.
+    """
+    return _sym()[].kpep_event_description(ev, description)
+
+
+# ===-----------------------------------------------------------------------===#
+# Function pointer types for KPEPConfig
 # ===-----------------------------------------------------------------------===#
 
 comptime KPEPConfigCreateFn = def(
@@ -300,7 +689,9 @@ comptime KPEPConfigAddEventFn = def(
 comptime KPEPConfigRemoveEventFn = def(KPEPConfig.Pointer, c_size_t) thin abi(
     "C"
 ) -> c_int
-comptime KPEPConfigForceCountersFn = def(KPEPConfig.Pointer) thin abi("C") -> c_int
+comptime KPEPConfigForceCountersFn = def(KPEPConfig.Pointer) thin abi(
+    "C"
+) -> c_int
 comptime KPEPConfigEventsCountFn = def(
     KPEPConfig.Pointer, OptionalUnsafePointer[c_size_t, MutAnyOrigin]
 ) thin abi("C") -> c_int
@@ -321,6 +712,11 @@ comptime KPEPConfigKPCClassesFn = def(
 comptime KPEPConfigKPCMapFn = def(
     KPEPConfig.Pointer, OptionalUnsafePointer[c_size_t, MutAnyOrigin], c_size_t
 ) thin abi("C") -> c_int
+
+# ===-----------------------------------------------------------------------===#
+# Function pointer types for KPEPDb
+# ===-----------------------------------------------------------------------===#
+
 comptime KPEPDbCreateFn = def(
     ConstCStringPointer, OptionalUnsafePointer[KPEPDb.Pointer, MutAnyOrigin]
 ) thin abi("C") -> c_int
@@ -332,7 +728,9 @@ comptime KPEPDbAliasesCountFn = def(
     KPEPDb.Pointer, OptionalUnsafePointer[c_size_t, MutAnyOrigin]
 ) thin abi("C") -> c_int
 comptime KPEPDbAliasesFn = def(
-    KPEPDb.Pointer, OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin], c_size_t
+    KPEPDb.Pointer,
+    OptionalUnsafePointer[ConstCStringPointer, MutAnyOrigin],
+    c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPDbCountersCountFn = def(
     KPEPDb.Pointer, UInt8, OptionalUnsafePointer[c_size_t, MutAnyOrigin]
@@ -341,7 +739,9 @@ comptime KPEPDbEventsCountFn = def(
     KPEPDb.Pointer, OptionalUnsafePointer[c_size_t, MutAnyOrigin]
 ) thin abi("C") -> c_int
 comptime KPEPDbEventsFn = def(
-    KPEPDb.Pointer, OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin], c_size_t
+    KPEPDb.Pointer,
+    OptionalUnsafePointer[KPEPEvent.Pointer, MutAnyOrigin],
+    c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPDbEventFn = def(
     KPEPDb.Pointer,
@@ -357,7 +757,8 @@ comptime KPEPEventStringFn = def(
 # KPEP Symbols
 # ===-----------------------------------------------------------------------===#
 
-struct KPEPSymbols(Copyable):
+
+struct _KPEPSymbols(Copyable):
     """Eagerly-resolved function pointers for `kperfdata.framework`.
 
     Each field is a C function pointer obtained via `dlsym` from Apple's
@@ -393,216 +794,28 @@ struct KPEPSymbols(Copyable):
     """
 
     var kpep_config_create: KPEPConfigCreateFn
-    """Creates a new configuration builder for a database.
-
-    Args:
-        db: Database handle previously obtained from `kpep_db_create`.
-        cfg_ptr: Pointer to receive the newly allocated config. Free it with
-            `kpep_config_free`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_free: KPEPConfigFreeFn
-    """Frees a config previously allocated by `kpep_config_create`."""
-
     var kpep_config_add_event: KPEPConfigAddEventFn
-    """Adds an event to a configuration.
-
-    Args:
-        cfg: Config to modify.
-        ev_ptr: Pointer to an event pointer obtained from `kpep_db_event`.
-        flag: 0 to count in all modes; 1 for user space only.
-        err: Optional error bitmap pointer. If the return value is
-            `KPEP_CONFIG_ERROR_CONFLICTING_EVENTS`, each set bit identifies a
-            conflicting event index.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_remove_event: KPEPConfigRemoveEventFn
-    """Removes the event at `idx` from a configuration.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_force_counters: KPEPConfigForceCountersFn
-    """Marks a configuration as needing force-acquired counters.
-
-    After calling this, `kpep_config_kpc` produces register values that require
-    `kpc_force_all_ctrs_set(1)` to have been called first.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_events_count: KPEPConfigEventsCountFn
-    """Gets the number of events added to a config.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_events: KPEPConfigEventsFn
-    """Gets all event pointers from a configuration.
-
-    Args:
-        cfg: Config to query.
-        buf: Buffer to receive event pointers.
-        buf_size: Buffer size in bytes; should be at least
-            `kpep_config_events_count() * size_of[KPEPEvent.Pointer]()`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_kpc: KPEPConfigKPCFn
-    """Gets KPC register configuration values.
-
-    Args:
-        cfg: Config to query.
-        buf: Buffer to receive register config values.
-        buf_size: Buffer size in bytes; should be at least
-            `kpep_config_kpc_count() * size_of[KPCConfig]()`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_kpc_count: KPEPConfigKPCCountFn
-    """Gets the number of KPC register config values.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_kpc_classes: KPEPConfigKPCClassesFn
-    """Gets the active KPC counter class mask.
-
-    `classes_ptr` receives a combination of `KPC_CLASS_*_MASK` constants.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_config_kpc_map: KPEPConfigKPCMapFn
-    """Gets the mapping from event index to hardware counter slot.
-
-    Args:
-        cfg: Config to query.
-        buf: Buffer to receive one hardware counter slot index per event.
-        buf_size: Buffer size in bytes; should be at least
-            `kpep_config_events_count() * size_of[c_size_t]()`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_create: KPEPDbCreateFn
-    """Opens a KPEP database file.
-
-    Searches `/usr/share/kpep/` or `/usr/local/share/kpep/`.
-
-    Args:
-        name: Database file name, such as `"haswell"` or
-            `"cpu_100000c_1_92fb37c8"`. Pass null to auto-detect the current
-            CPU.
-        db_ptr: Pointer to receive the newly allocated database. Free it with
-            `kpep_db_free`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_free: KPEPDbFreeFn
-    """Frees a database previously allocated by `kpep_db_create`."""
-
     var kpep_db_name: KPEPDbNameFn
-    """Gets a database's marketing name, such as `"Apple M1"`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_aliases_count: KPEPDbAliasesCountFn
-    """Gets the number of event aliases in a database.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_aliases: KPEPDbAliasesFn
-    """Gets all alias strings from a database.
-
-    Args:
-        db: Database to query.
-        buf: Buffer to receive alias string pointers.
-        buf_size: Buffer size in bytes; should be at least
-            `kpep_db_aliases_count() * size_of[ConstCStringPointer]()`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_counters_count: KPEPDbCountersCountFn
-    """Gets the number of counters for a class mask.
-
-    `classes` is 1 for fixed, 2 for configurable, or 3 for both.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_events_count: KPEPDbEventsCountFn
-    """Gets the total number of events in a database.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_events: KPEPDbEventsFn
-    """Gets all event pointers from a database.
-
-    Args:
-        db: Database to query.
-        buf: Buffer to receive event pointers.
-        buf_size: Buffer size in bytes; should be at least
-            `kpep_db_events_count() * size_of[KPEPEvent.Pointer]()`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_db_event: KPEPDbEventFn
-    """Looks up one event by name or alias.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_event_name: KPEPEventStringFn
-    """Gets an event's unique name, such as `"INST_ALL"`.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_event_alias: KPEPEventStringFn
-    """Gets an event's alias, such as `"Instructions"`, if one exists.
-
-    Returns:
-        0 for success.
-    """
-
     var kpep_event_description: KPEPEventStringFn
-    """Gets an event's human-readable description, if available.
-
-    Returns:
-        0 for success.
-    """
 
     def __init__(out self, handle: OwnedDLHandle):
         self.kpep_config_create = handle.get_function[KPEPConfigCreateFn](
