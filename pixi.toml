@@ -11,6 +11,11 @@ version = "0.1.0"
 
 [tasks]
 main = "mojo run -I src examples/main.mojo"
+test-apple = """
+    mojo run -I src tests/apple/test_database.mojo &
+    mojo run -I src tests/apple/test_config.mojo &
+    mojo run -I src tests/apple/test_event.mojo
+"""
 
 [dependencies]
 mojo = ">=1.0.0b3.dev2026061606,<2"
