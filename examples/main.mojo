@@ -1,4 +1,4 @@
-from professor.apple.load import AppleEvents, LibraryHandle
+from professor.apple.ffi import kperf
 from std.collections import InlineArray
 
 
@@ -10,19 +10,18 @@ def run_workload(iterations: Int) -> UInt64:
     var checksum = UInt64(1)
     for i in range(iterations):
         checksum = (
-            checksum * UInt64(1_664_525)
-            + UInt64(i)
-            + UInt64(1_013_904_223)
+            checksum * UInt64(1_664_525) + UInt64(i) + UInt64(1_013_904_223)
         ) % UInt64(4_294_967_291)
     return checksum
 
-def main() raises:
-    var libs = LibraryHandle()
 
+def main() raises:
     var buffer = InlineArray[Int8, 32](fill=0)
-    var pmu_version = libs.kperf.kpc_pmu_version()
-    _ = libs.kperf.kpc_cpu_string(buffer.unsafe_ptr(), UInt(len(buffer)))
-    var string = String(unsafe_from_utf8_ptr=buffer.unsafe_ptr().bitcast[UInt8]())
+    var pmu_version = kperf.kpc_pmu_version()
+    _ = kperf.kpc_cpu_string(buffer.unsafe_ptr(), UInt(len(buffer)))
+    var string = String(
+        unsafe_from_utf8_ptr=buffer.unsafe_ptr().bitcast[UInt8]()
+    )
 
     print(pmu_version)
     print(string)

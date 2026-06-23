@@ -4,3 +4,12 @@
 
 # Apple
 .DS_Store
+
+# Agents' configurations
+.claude/
+.codex/
+
+# Others
+/darwin-kperf
+/scripts
+/examples
