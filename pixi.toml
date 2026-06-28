@@ -18,4 +18,4 @@ test-apple = """
 """
 
 [dependencies]
-mojo = ">=1.0.0b3.dev2026061606,<2"
+mojo = ">=1.0.0b3.dev2026062806,<2"

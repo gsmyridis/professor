@@ -24,6 +24,8 @@ from std.os import abort
 from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
 from std.memory import OptionalUnsafePointer
 
+from professor.ffi_utils import cast_optional_mut_ptr
+
 # ===-----------------------------------------------------------------------===#
 # Type Aliases
 # ===-----------------------------------------------------------------------===#
@@ -135,9 +137,9 @@ def kpc_pmu_version() -> UInt32:
 
 
 @always_inline
-def kpc_cpu_string(
-    buf: OptionalUnsafePointer[c_char, MutAnyOrigin], buf_size: c_size_t
-) -> c_int:
+def kpc_cpu_string[
+    origin: MutOrigin
+](buf: UnsafePointer[c_char, origin], buf_size: c_size_t) -> c_int:
     """Prints the current CPU identification string to a buffer.
 
     The behavior is similar to `snprintf`. An example string is
@@ -156,7 +158,9 @@ def kpc_cpu_string(
     Returns:
         The string length, or a negative value if an error occurs.
     """
-    return _sym()[].kpc_cpu_string(buf, buf_size)
+    return _sym()[].kpc_cpu_string(
+        buf.unsafe_origin_cast[MutUntrackedOrigin](), buf_size
+    )
 
 
 @always_inline
@@ -254,9 +258,9 @@ def kpc_get_counter_count(classes: UInt32) -> UInt32:
 
 
 @always_inline
-def kpc_set_config(
-    classes: UInt32, config: OptionalUnsafePointer[KPCConfig, MutAnyOrigin]
-) -> c_int:
+def kpc_set_config[
+    origin: MutOrigin, //
+](classes: UInt32, config: UnsafePointer[KPCConfig, origin]) -> c_int:
     """Sets config registers.
 
     `config` should contain at least `kpc_get_config_count(classes)`
@@ -271,13 +275,15 @@ def kpc_set_config(
     Returns:
         0 for success.
     """
-    return _sym()[].kpc_set_config(classes, config)
+    return _sym()[].kpc_set_config(
+        classes, config.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
-def kpc_get_config(
-    classes: UInt32, config: OptionalUnsafePointer[KPCConfig, MutAnyOrigin]
-) -> c_int:
+def kpc_get_config[
+    origin: MutOrigin, //
+](classes: UInt32, config: UnsafePointer[KPCConfig, origin]) -> c_int:
     """Gets config registers.
 
     `config` should have room for at least `kpc_get_config_count(classes)`
@@ -292,15 +298,19 @@ def kpc_get_config(
     Returns:
         0 for success.
     """
-    return _sym()[].kpc_get_config(classes, config)
+    return _sym()[].kpc_get_config(
+        classes, config.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
-def kpc_get_cpu_counters(
+def kpc_get_cpu_counters[
+    cpu_origin: MutOrigin, buf_origin: MutOrigin, //
+](
     all_cpus: Bool,
     classes: UInt32,
-    curcpu: OptionalUnsafePointer[c_int, MutAnyOrigin],
-    buf: OptionalUnsafePointer[UInt64, MutAnyOrigin],
+    cpu: OptionalUnsafePointer[c_int, cpu_origin],
+    buf: UnsafePointer[UInt64, buf_origin],
 ) -> c_int:
     """Gets counter accumulations.
 
@@ -313,21 +323,24 @@ def kpc_get_cpu_counters(
     Args:
         all_cpus: True for all CPUs; false for the current CPU.
         classes: A combination of `KPC_CLASS_*_MASK` constants.
-        curcpu: Pointer to receive the current CPU id; may be null.
+        cpu: Pointer to receive the current CPU id; may be null.
         buf: Buffer to receive counter values.
 
     Returns:
         0 for success.
     """
-    return _sym()[].kpc_get_cpu_counters(all_cpus, classes, curcpu, buf)
+    return _sym()[].kpc_get_cpu_counters(
+        all_cpus,
+        classes,
+        cast_optional_mut_ptr[MutUntrackedOrigin](cpu),
+        buf.unsafe_origin_cast[MutUntrackedOrigin](),
+    )
 
 
 @always_inline
-def kpc_get_thread_counters(
-    tid: UInt32,
-    buf_count: UInt32,
-    buf: OptionalUnsafePointer[UInt64, MutAnyOrigin],
-) -> c_int:
+def kpc_get_thread_counters[
+    origin: MutOrigin, //
+](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin],) -> c_int:
     """Gets counter accumulations for the current thread.
 
     Reads `kpc.thread_counters` via `sysctl`.
@@ -341,7 +354,11 @@ def kpc_get_thread_counters(
     Returns:
         0 for success.
     """
-    return _sym()[].kpc_get_thread_counters(tid, buf_count, buf)
+    return _sym()[].kpc_get_thread_counters(
+        tid,
+        buf_count,
+        buf.unsafe_origin_cast[MutUntrackedOrigin](),
+    )
 
 
 @always_inline
@@ -360,9 +377,9 @@ def kpc_force_all_ctrs_set(val: c_int) -> c_int:
 
 
 @always_inline
-def kpc_force_all_ctrs_get(
-    val_out: OptionalUnsafePointer[c_int, MutAnyOrigin]
-) -> c_int:
+def kpc_force_all_ctrs_get[
+    origin: MutOrigin, //
+](val_out: UnsafePointer[c_int, origin]) -> c_int:
     """Gets the state of `force_all_ctrs`.
 
     Reads `kpc.force_all_ctrs` via `sysctl`.
@@ -373,7 +390,9 @@ def kpc_force_all_ctrs_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kpc_force_all_ctrs_get(val_out)
+    return _sym()[].kpc_force_all_ctrs_get(
+        val_out.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -392,9 +411,9 @@ def kperf_action_count_set(count: UInt32) -> c_int:
 
 
 @always_inline
-def kperf_action_count_get(
-    count: OptionalUnsafePointer[UInt32, MutAnyOrigin]
-) -> c_int:
+def kperf_action_count_get[
+    origin: MutOrigin, //
+](count: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets the number of actions.
 
     Reads `kperf.action.count` via `sysctl`.
@@ -405,7 +424,9 @@ def kperf_action_count_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_action_count_get(count)
+    return _sym()[].kperf_action_count_get(
+        count.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -427,9 +448,9 @@ def kperf_action_samplers_set(actionid: UInt32, sample: UInt32) -> c_int:
 
 
 @always_inline
-def kperf_action_samplers_get(
-    actionid: UInt32, sample: OptionalUnsafePointer[UInt32, MutAnyOrigin]
-) -> c_int:
+def kperf_action_samplers_get[
+    origin: MutOrigin, //
+](actionid: UInt32, sample: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets what an action samples when its trigger fires.
 
     Reads `kperf.action.samplers` via `sysctl`.
@@ -441,7 +462,9 @@ def kperf_action_samplers_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_action_samplers_get(actionid, sample)
+    return _sym()[].kperf_action_samplers_get(
+        actionid, sample.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -492,9 +515,9 @@ def kperf_timer_count_set(count: UInt32) -> c_int:
 
 
 @always_inline
-def kperf_timer_count_get(
-    count: OptionalUnsafePointer[UInt32, MutAnyOrigin]
-) -> c_int:
+def kperf_timer_count_get[
+    origin: MutOrigin, //
+](count: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets the number of timer triggers.
 
     Reads `kperf.timer.count` via `sysctl`.
@@ -505,7 +528,9 @@ def kperf_timer_count_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_timer_count_get(count)
+    return _sym()[].kperf_timer_count_get(
+        count.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -521,9 +546,9 @@ def kperf_timer_period_set(timerid: UInt32, period: UInt64) -> c_int:
 
 
 @always_inline
-def kperf_timer_period_get(
-    timerid: UInt32, period: OptionalUnsafePointer[UInt64, MutAnyOrigin]
-) -> c_int:
+def kperf_timer_period_get[
+    origin: MutOrigin, //
+](timer_id: UInt32, period: UnsafePointer[UInt64, origin]) -> c_int:
     """Gets a timer period.
 
     Reads `kperf.timer.period` via `sysctl`.
@@ -531,7 +556,9 @@ def kperf_timer_period_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_timer_period_get(timerid, period)
+    return _sym()[].kperf_timer_period_get(
+        timer_id, period.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -547,9 +574,9 @@ def kperf_timer_action_set(timerid: UInt32, actionid: UInt32) -> c_int:
 
 
 @always_inline
-def kperf_timer_action_get(
-    timerid: UInt32, actionid: OptionalUnsafePointer[UInt32, MutAnyOrigin]
-) -> c_int:
+def kperf_timer_action_get[
+    origin: MutOrigin, //
+](timer_id: UInt32, action_id: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets the action id associated with a timer.
 
     Reads `kperf.timer.action` via `sysctl`.
@@ -557,7 +584,9 @@ def kperf_timer_action_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_timer_action_get(timerid, actionid)
+    return _sym()[].kperf_timer_action_get(
+        timer_id, action_id.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -576,9 +605,9 @@ def kperf_sample_set(enabled: UInt32) -> c_int:
 
 
 @always_inline
-def kperf_sample_get(
-    enabled: OptionalUnsafePointer[UInt32, MutAnyOrigin]
-) -> c_int:
+def kperf_sample_get[
+    origin: MutOrigin, //
+](enabled: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets whether sampling is active.
 
     Reads `kperf.sampling` via `sysctl`.
@@ -589,7 +618,9 @@ def kperf_sample_get(
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_sample_get(enabled)
+    return _sym()[].kperf_sample_get(
+        enabled.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -603,33 +634,37 @@ def kperf_reset() -> c_int:
 
 
 @always_inline
-def kperf_timer_pet_set(timerid: UInt32) -> c_int:
+def kperf_timer_pet_set(timer_id: UInt32) -> c_int:
     """Sets which timer id performs PET (Profile Every Thread).
 
     Writes `kperf.timer.pet_timer` via `sysctl`.
 
     Args:
-        timerid: Timer id.
+        timer_id: Timer id.
 
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_timer_pet_set(timerid)
+    return _sym()[].kperf_timer_pet_set(timer_id)
 
 
 @always_inline
-def kperf_timer_pet_get(timerid: UnsafePointer[UInt32, MutAnyOrigin]) -> c_int:
+def kperf_timer_pet_get[
+    origin: MutOrigin, //
+](timer_id: UnsafePointer[UInt32, origin]) -> c_int:
     """Gets which timer id performs PET (Profile Every Thread).
 
     Reads `kperf.timer.pet_timer` via `sysctl`.
 
     Args:
-        timerid: Pointer to receive the timer id.
+        timer_id: Pointer to receive the timer id.
 
     Returns:
         0 for success.
     """
-    return _sym()[].kperf_timer_pet_get(timerid)
+    return _sym()[].kperf_timer_pet_get(
+        timer_id.unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
 
 @always_inline
@@ -655,28 +690,28 @@ def kperf_tick_frequency() -> UInt64:
 # ===-----------------------------------------------------------------------===#
 
 comptime KPCCpuStringFn = def(
-    OptionalUnsafePointer[c_char, MutAnyOrigin], c_size_t
+    UnsafePointer[c_char, MutUntrackedOrigin], c_size_t
 ) thin abi("C") -> c_int
 comptime KPCPmuVersionFn = def() thin abi("C") -> UInt32
 comptime KPCGetCountingFn = def() thin abi("C") -> UInt32
 comptime KPCSetCountingFn = def(UInt32) thin abi("C") -> c_int
 comptime KPCGetConfigCountFn = def(UInt32) thin abi("C") -> UInt32
 comptime KPCConfigFn = def(
-    UInt32, OptionalUnsafePointer[KPCConfig, MutAnyOrigin]
+    UInt32, UnsafePointer[KPCConfig, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPCGetCounterCountFn = def(UInt32) thin abi("C") -> UInt32
 comptime KPCGetCpuCountersFn = def(
     Bool,
     UInt32,
-    OptionalUnsafePointer[c_int, MutAnyOrigin],
-    OptionalUnsafePointer[UInt64, MutAnyOrigin],
+    OptionalUnsafePointer[c_int, MutUntrackedOrigin],
+    UnsafePointer[UInt64, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPCGetThreadCountersFn = def(
-    UInt32, UInt32, OptionalUnsafePointer[UInt64, MutAnyOrigin]
+    UInt32, UInt32, UnsafePointer[UInt64, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPCForceAllCtrsSetFn = def(c_int) thin abi("C") -> c_int
 comptime KPCForceAllCtrsGetFn = def(
-    OptionalUnsafePointer[c_int, MutAnyOrigin]
+    UnsafePointer[c_int, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 
 # ===-----------------------------------------------------------------------===#
@@ -685,32 +720,32 @@ comptime KPCForceAllCtrsGetFn = def(
 
 comptime KPerfActionCountSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfActionCountGetFn = def(
-    OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfActionSamplersSetFn = def(UInt32, UInt32) thin abi("C") -> c_int
 comptime KPerfActionSamplersGetFn = def(
-    UInt32, OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UInt32, UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfActionFilterSetFn = def(UInt32, Int32) thin abi("C") -> c_int
 comptime KPerfTimerCountSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfTimerCountGetFn = def(
-    OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerPeriodSetFn = def(UInt32, UInt64) thin abi("C") -> c_int
 comptime KPerfTimerPeriodGetFn = def(
-    UInt32, OptionalUnsafePointer[UInt64, MutAnyOrigin]
+    UInt32, UnsafePointer[UInt64, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerActionSetFn = def(UInt32, UInt32) thin abi("C") -> c_int
 comptime KPerfTimerActionGetFn = def(
-    UInt32, OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UInt32, UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerPetSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfTimerPetGetFn = def(
-    OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfSampleSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfSampleGetFn = def(
-    OptionalUnsafePointer[UInt32, MutAnyOrigin]
+    UnsafePointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfResetFn = def() thin abi("C") -> c_int
 comptime KPerfNsToTicksFn = def(UInt64) thin abi("C") -> UInt64

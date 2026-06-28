@@ -29,7 +29,7 @@ struct KPCClass(
 
 @fieldwise_init
 struct KPCConfig(RegisterPassable):
-    var value: OptionalUnsafePointer[ffi_kperf.KPCConfig, MutAnyOrigin]
+    var value: UnsafePointer[ffi_kperf.KPCConfig, MutUntrackedOrigin]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -193,8 +193,8 @@ def get_config(classes: UInt32, mut config: KPCConfig) raises:
 def get_cpu_counters(
     all_cpus: Bool,
     classes: UInt32,
-    curcpu: OptionalUnsafePointer[c_int, MutAnyOrigin],
-    buf: OptionalUnsafePointer[UInt64, MutAnyOrigin],
+    curcpu: OptionalUnsafePointer[c_int, MutUntrackedOrigin],
+    buf: UnsafePointer[UInt64, MutUntrackedOrigin],
 ) raises:
     """Gets counter accumulations.
 
@@ -216,7 +216,7 @@ def get_cpu_counters(
 def get_thread_counters(
     tid: UInt32,
     buf_count: UInt32,
-    buf: OptionalUnsafePointer[UInt64, MutAnyOrigin],
+    buf: UnsafePointer[UInt64, MutUntrackedOrigin],
 ) raises:
     """Gets counter accumulations for the current thread.
 

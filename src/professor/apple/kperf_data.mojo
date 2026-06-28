@@ -1,9 +1,13 @@
 from std.ffi import CStringSlice, c_char, c_size_t
 from std.sys import size_of
 
-from professor._string_utils import _cstr_to_slice, _cstr_to_slice_opt
-from .ffi.kperf_data import (
+from professor.ffi_utils import (
     ConstCStringPointer,
+    cstr_to_slice,
+    cstr_to_slice_opt,
+)
+
+from .ffi.kperf_data import (
     KPEPConfig,
     KPEPDb,
     KPEPEvent,
@@ -71,7 +75,7 @@ struct Database(Movable):
     be freed exactly once.
     """
 
-    var _ptr: KPEPDb.Pointer
+    var _ptr: UnsafePointer[KPEPDb, MutUntrackedOrigin]
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
@@ -82,7 +86,7 @@ struct Database(Movable):
         # It is never read before `kpep_db_create` writes the real address
         # into it, and we only commit it to `self._ptr` after checking the
         # call succeeded.
-        var ptr = KPEPDb.Pointer.unsafe_dangling()
+        var ptr = UnsafePointer[KPEPDb, MutUntrackedOrigin].unsafe_dangling()
         if kpep_db_create({}, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create database")
         self._ptr = ptr
@@ -103,14 +107,14 @@ struct Database(Movable):
         Returns:
             The name of the database.
         """
-        return _cstr_to_slice[origin_of(self)](self._ptr[].name)
+        return cstr_to_slice[origin_of(self)](self._ptr[].name)
 
     def marketing_name(self) raises -> StringSlice[origin_of(self)]:
         """Returns the marketing name of the CPU, e.g. `"Apple M1"`."""
         var ptr: ConstCStringPointer = {}
         if kpep_db_name(self._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to get marketing name")
-        return _cstr_to_slice[origin_of(self)](ptr)
+        return cstr_to_slice[origin_of(self)](ptr)
 
     def cpu(self) -> Optional[Cpu]:
         """Identifies this database's Apple Silicon generation.
@@ -146,7 +150,7 @@ struct Database(Movable):
             raise Error("event unavailable on this CPU generation")
         var name = resolved.value().name()
 
-        var ev: KPEPEvent.Pointer = {}
+        var ev: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
         if (
             kpep_db_event(
                 self._ptr,
@@ -156,7 +160,9 @@ struct Database(Movable):
             != 0
         ):
             raise Error("event not found: " + String(name))
-        return Event[origin_of(self)](ev)
+        if not ev:
+            raise Error("event lookup returned null: " + String(name))
+        return Event[origin_of(self)](ev.value())
 
     def events(self) raises -> List[Event[origin_of(self)]]:
         """Returns every event in the database."""
@@ -173,7 +179,7 @@ struct Database(Movable):
         var result = List[Event[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):
-            result.append(Event[origin_of(self)](KPEPEvent.Pointer(base + i)))
+            result.append(Event[origin_of(self)](base + i))
         return result^
 
     def event_count(self) raises -> Int:
@@ -207,9 +213,9 @@ struct Event[origin: ImmutOrigin](Copyable, ImplicitlyCopyable, Movable):
     the point where the owner is destroyed.
     """
 
-    var _ptr: KPEPEvent.Pointer
+    var _ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
 
-    def __init__(out self, ptr: KPEPEvent.Pointer):
+    def __init__(out self, ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]):
         self._ptr = ptr
 
     def name(self) raises -> StringSlice[Self.origin]:
@@ -217,36 +223,36 @@ struct Event[origin: ImmutOrigin](Copyable, ImplicitlyCopyable, Movable):
         var ptr: ConstCStringPointer = {}
         if kpep_event_name(self._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to get event name")
-        return _cstr_to_slice[Self.origin](ptr)
+        return cstr_to_slice[Self.origin](ptr)
 
     def alias(self) raises -> Optional[StringSlice[Self.origin]]:
         """Alias name, such as `"Instructions"`, `"Cycles"`, if any."""
         var ptr: ConstCStringPointer = {}
         if kpep_event_alias(self._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to get event alias")
-        return _cstr_to_slice_opt[Self.origin](ptr)
+        return cstr_to_slice_opt[Self.origin](ptr)
 
     def description(self) raises -> Optional[StringSlice[Self.origin]]:
         """Human-readable description, if available."""
         var ptr: ConstCStringPointer = {}
         if kpep_event_description(self._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to get event description")
-        return _cstr_to_slice_opt[Self.origin](ptr)
+        return cstr_to_slice_opt[Self.origin](ptr)
 
     def is_fixed(self) -> Bool:
         """Whether this event must be placed in a fixed counter slot."""
         # No `kpep_event_*` getter exposes this; read the field directly.
-        return self._ptr.value()[].is_fixed != 0
+        return self._ptr[].is_fixed != 0
 
     def number(self) -> UInt8:
         """Event number (selector value written to the PMC config register)."""
         # No `kpep_event_*` getter exposes this; read the field directly.
-        return self._ptr.value()[].number
+        return self._ptr[].number
 
     def mask(self) -> UInt32:
         """Hardware event selector mask."""
         # No `kpep_event_*` getter exposes this; read the field directly.
-        return self._ptr.value()[].mask
+        return self._ptr[].mask
 
 
 # ===--------------------------------------------------------------------------------===
@@ -263,16 +269,16 @@ struct Config[origin: ImmutOrigin](Movable):
     `kpep_config` keeps a pointer back into that database.
     """
 
-    comptime PointerType = KPEPConfig.Pointer
-
-    var _ptr: Self.PointerType
+    var _ptr: UnsafePointer[KPEPConfig, MutUntrackedOrigin]
 
     def __init__(out self, ref[Self.origin] db: Database) raises:
         # SAFETY: see `Database.__init__`; same scratch-then-commit pattern.
-        var ptr: Self.PointerType = {}
+        var ptr: OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin] = {}
         if kpep_config_create(db._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create config")
-        self._ptr = ptr
+        if not ptr:
+            raise Error("config creation returned null")
+        self._ptr = ptr.value()
 
     def __del__(deinit self):
         kpep_config_free(self._ptr)
@@ -318,12 +324,18 @@ struct Config[origin: ImmutOrigin](Movable):
     def events(self) raises -> List[Event[Self.origin]]:
         """Returns every event added to this configuration."""
         var count = self.events_count()
-        var buf = List[KPEPEvent.Pointer](length=count, fill={})
+        var buf = List[UnsafePointer[KPEPEvent, MutUntrackedOrigin]](
+            length=count,
+            fill=UnsafePointer[KPEPEvent, MutUntrackedOrigin].unsafe_dangling(),
+        )
         if (
             kpep_config_events(
                 self._ptr,
                 buf.unsafe_ptr(),
-                c_size_t(count) * c_size_t(size_of[KPEPEvent.Pointer]()),
+                c_size_t(count)
+                * c_size_t(
+                    size_of[UnsafePointer[KPEPEvent, MutUntrackedOrigin]]()
+                ),
             )
             != 0
         ):
