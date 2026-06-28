@@ -14,7 +14,8 @@ main = "mojo run -I src examples/main.mojo"
 test-apple = """
     mojo run -I src tests/apple/test_database.mojo &
     mojo run -I src tests/apple/test_config.mojo &
-    mojo run -I src tests/apple/test_event.mojo
+    mojo run -I src tests/apple/test_event.mojo &
+    mojo run -I src tests/apple/ffi/test_kperf_data_layout.mojo
 """
 
 [dependencies]

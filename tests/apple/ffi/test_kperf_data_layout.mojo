@@ -83,7 +83,7 @@ def _getter_name(
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
     assert_equal(kpep_event_name(event, UnsafePointer(to=ptr)), 0)
-    return cstr_to_slice(ptr)
+    return cstr_to_string(ptr)
 
 
 def _getter_alias(
@@ -91,7 +91,7 @@ def _getter_alias(
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
     assert_equal(kpep_event_alias(event, UnsafePointer(to=ptr)), 0)
-    return cstr_to_slice(ptr)
+    return cstr_to_string(ptr)
 
 
 def _getter_description(
@@ -99,7 +99,7 @@ def _getter_description(
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
     assert_equal(kpep_event_description(event, UnsafePointer(to=ptr)), 0)
-    return cstr_to_slice(ptr)
+    return cstr_to_string(ptr)
 
 
 # ===---------------------------------------------------------------------------------===
@@ -138,8 +138,8 @@ def test_database_layout_marketing_names() raises:
     var res = kpep_db_name(db.ptr, UnsafePointer(to=marketing_name))
     assert_equal(res, 0, "failed to read database marketing name")
     assert_equal(
-        cstr_to_slice(db.ptr[].marketing_name),
-        cstr_to_slice(marketing_name),
+        cstr_to_string(db.ptr[].marketing_name),
+        cstr_to_string(marketing_name),
         "database marketing names do not match",
     )
 
@@ -156,10 +156,15 @@ def test_event_layout_name() raises:
 
     for event in events:
         assert_equal(
-            cstr_to_slice(event[].name),
+            cstr_to_string(event[].name),
             _getter_name(event),
             "event names do not match",
         )
+
+    # Keep `db` alive: `events` borrows pointers into its event array, and
+    # Mojo destroys `db` right after its last syntactic use otherwise,
+    # which would free that array before the loop above reads it.
+    _ = db.ptr
 
 
 def test_event_layout_alias() raises:
@@ -169,10 +174,12 @@ def test_event_layout_alias() raises:
 
     for event in events:
         assert_equal(
-            cstr_to_slice(event[].alias_name),
+            cstr_to_string(event[].alias_name),
             _getter_alias(event),
             "event aliases do not match",
         )
+
+    _ = db.ptr
 
 
 def test_event_layout_description() raises:
@@ -182,10 +189,12 @@ def test_event_layout_description() raises:
 
     for event in events:
         assert_equal(
-            cstr_to_slice(event[].description),
+            cstr_to_string(event[].description),
             _getter_description(event),
             "event descriptions do not match",
         )
+
+    _ = db.ptr
 
 
 def test_known_event_lookup_fields_match_framework_getters() raises:
@@ -196,16 +205,20 @@ def test_known_event_lookup_fields_match_framework_getters() raises:
     assert_equal(
         kpep_db_event(
             db.ptr,
-            inst_name.unsafe_ptr().bitcast[c_char](),
+            inst_name.as_c_string_slice().unsafe_ptr(),
             UnsafePointer(to=inst),
         ),
         0,
     )
     assert_true(Bool(inst))
-    assert_equal(cstr_to_slice(inst.value()[].name), _getter_name(inst.value()))
+    assert_equal(cstr_to_string(inst.value()[].name), _getter_name(inst.value()))
     assert_equal(
-        cstr_to_slice(inst.value()[].alias_name), _getter_alias(inst.value())
+        cstr_to_string(inst.value()[].alias_name), _getter_alias(inst.value())
     )
+
+    # Keep `db` alive through the reads above; see comment in
+    # `test_event_layout_name`.
+    _ = db.ptr
 
 
 def test_config_fields_match_framework_getters_after_add_event() raises:
@@ -219,7 +232,7 @@ def test_config_fields_match_framework_getters_after_add_event() raises:
     assert_equal(
         kpep_db_event(
             db.ptr,
-            name.unsafe_ptr().bitcast[c_char](),
+            name.as_c_string_slice().unsafe_ptr(),
             UnsafePointer(to=event),
         ),
         0,
@@ -247,6 +260,11 @@ def test_config_fields_match_framework_getters_after_add_event() raises:
     var classes: UInt32 = 0
     assert_equal(kpep_config_kpc_classes(cfg.ptr, UnsafePointer(to=classes)), 0)
     assert_equal(cfg.ptr[].classes, classes)
+
+    # Keep `db` alive through `cfg`'s entire lifetime (including its
+    # destructor): `kpep_config` keeps an internal pointer back to the
+    # `kpep_db` it was created from. See comment in `test_event_layout_name`.
+    _ = db.ptr
 
 
 def main() raises:
