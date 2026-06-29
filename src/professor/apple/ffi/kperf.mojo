@@ -348,7 +348,8 @@ def kpc_get_thread_counters[
     Args:
         tid: Thread id; should be 0.
         buf_count: Number of elements in `buf`, not bytes; should be at
-            least `kpc_get_counter_count(classes)`.
+            least `kpc_get_counter_count(classes)` where classes are all
+            active classes.
         buf: Buffer to receive counter values.
 
     Returns:
