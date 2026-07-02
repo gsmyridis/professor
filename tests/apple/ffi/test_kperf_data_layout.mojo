@@ -211,7 +211,9 @@ def test_known_event_lookup_fields_match_framework_getters() raises:
         0,
     )
     assert_true(Bool(inst))
-    assert_equal(cstr_to_string(inst.value()[].name), _getter_name(inst.value()))
+    assert_equal(
+        cstr_to_string(inst.value()[].name), _getter_name(inst.value())
+    )
     assert_equal(
         cstr_to_string(inst.value()[].alias_name), _getter_alias(inst.value())
     )

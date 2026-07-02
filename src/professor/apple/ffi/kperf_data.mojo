@@ -231,26 +231,26 @@ struct KPEPConfig(Copyable):
 # Error codes
 # ===-----------------------------------------------------------------------===#
 
-comptime KPEP_CONFIG_ERROR_NONE: Int = 0
-comptime KPEP_CONFIG_ERROR_INVALID_ARGUMENT: Int = 1
-comptime KPEP_CONFIG_ERROR_OUT_OF_MEMORY: Int = 2
-comptime KPEP_CONFIG_ERROR_IO: Int = 3
-comptime KPEP_CONFIG_ERROR_BUFFER_TOO_SMALL: Int = 4
-comptime KPEP_CONFIG_ERROR_CUR_SYSTEM_UNKNOWN: Int = 5
-comptime KPEP_CONFIG_ERROR_DB_PATH_INVALID: Int = 6
-comptime KPEP_CONFIG_ERROR_DB_NOT_FOUND: Int = 7
-comptime KPEP_CONFIG_ERROR_DB_ARCH_UNSUPPORTED: Int = 8
-comptime KPEP_CONFIG_ERROR_DB_VERSION_UNSUPPORTED: Int = 9
-comptime KPEP_CONFIG_ERROR_DB_CORRUPT: Int = 10
-comptime KPEP_CONFIG_ERROR_EVENT_NOT_FOUND: Int = 11
-comptime KPEP_CONFIG_ERROR_CONFLICTING_EVENTS: Int = 12
-comptime KPEP_CONFIG_ERROR_COUNTERS_NOT_FORCED: Int = 13
-comptime KPEP_CONFIG_ERROR_EVENT_UNAVAILABLE: Int = 14
-comptime KPEP_CONFIG_ERROR_ERRNO: Int = 15
-comptime KPEP_CONFIG_ERROR_MAX: Int = 16
+comptime KPEP_CONFIG_ERROR_NONE: c_int = 0
+comptime KPEP_CONFIG_ERROR_INVALID_ARGUMENT: c_int = 1
+comptime KPEP_CONFIG_ERROR_OUT_OF_MEMORY: c_int = 2
+comptime KPEP_CONFIG_ERROR_IO: c_int = 3
+comptime KPEP_CONFIG_ERROR_BUFFER_TOO_SMALL: c_int = 4
+comptime KPEP_CONFIG_ERROR_CUR_SYSTEM_UNKNOWN: c_int = 5
+comptime KPEP_CONFIG_ERROR_DB_PATH_INVALID: c_int = 6
+comptime KPEP_CONFIG_ERROR_DB_NOT_FOUND: c_int = 7
+comptime KPEP_CONFIG_ERROR_DB_ARCH_UNSUPPORTED: c_int = 8
+comptime KPEP_CONFIG_ERROR_DB_VERSION_UNSUPPORTED: c_int = 9
+comptime KPEP_CONFIG_ERROR_DB_CORRUPT: c_int = 10
+comptime KPEP_CONFIG_ERROR_EVENT_NOT_FOUND: c_int = 11
+comptime KPEP_CONFIG_ERROR_CONFLICTING_EVENTS: c_int = 12
+comptime KPEP_CONFIG_ERROR_COUNTERS_NOT_FORCED: c_int = 13
+comptime KPEP_CONFIG_ERROR_EVENT_UNAVAILABLE: c_int = 14
+comptime KPEP_CONFIG_ERROR_ERRNO: c_int = 15
+comptime KPEP_CONFIG_ERROR_MAX: c_int = 16
 
 
-def kpep_config_error_desc(code: Int) -> String:
+def kpep_config_error_desc(code: c_int) -> String:
     if code == KPEP_CONFIG_ERROR_NONE:
         return "none"
     if code == KPEP_CONFIG_ERROR_INVALID_ARGUMENT:
@@ -334,7 +334,7 @@ def kpep_config_create[
 ](
     db: KPEPDb.MutPointerType,
     cfg_ptr: UnsafePointer[
-        OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin], origin
+        UnsafePointer[KPEPConfig, MutUntrackedOrigin], origin
     ],
 ) -> c_int:
     """Creates a new configuration builder for a database.
@@ -796,7 +796,7 @@ def kpep_event_description[
 comptime KPEPConfigCreateFn = def(
     KPEPDb.MutPointerType,
     UnsafePointer[
-        OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin],
+        UnsafePointer[KPEPConfig, MutUntrackedOrigin],
         MutUntrackedOrigin,
     ],
 ) thin abi("C") -> c_int

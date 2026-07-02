@@ -44,3 +44,10 @@ kpc_set_thread_counting(classes)     # enable per-thread accumulation
 // ... workload ...
 kpc_get_thread_counters(0, n, buf)   # read per-thread values
 ```
+
+Database gives access to events.
+Events basically give you descriptions of counters.
+
+Witht the help of the database you create a config.
+The config is used to setup the counters / sampler.
+You read back with config.
