@@ -334,7 +334,7 @@ def kpep_config_create[
 ](
     db: KPEPDb.MutPointerType,
     cfg_ptr: UnsafePointer[
-        OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin], origin
+        UnsafePointer[KPEPConfig, MutUntrackedOrigin], origin
     ],
 ) -> c_int:
     """Creates a new configuration builder for a database.
@@ -796,7 +796,7 @@ def kpep_event_description[
 comptime KPEPConfigCreateFn = def(
     KPEPDb.MutPointerType,
     UnsafePointer[
-        OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin],
+        UnsafePointer[KPEPConfig, MutUntrackedOrigin],
         MutUntrackedOrigin,
     ],
 ) thin abi("C") -> c_int

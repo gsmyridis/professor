@@ -6,7 +6,7 @@ from std.ffi import c_char, c_size_t, c_int
 from std.testing import assert_not_equal
 from std.memory import alloc, Layout
 
-from professor.apple.ffi import kperf
+from professor.apple.ffi import kperf, kperf_data
 from professor.apple.ffi.testing import assert_success
 
 
@@ -57,6 +57,12 @@ def run_kperf_ffi_example() raises:
     # Get / Set thread counting
     # ===--------------------------------------------------------------------===
     print("Thread counting:")
+    print_counting(kperf.kpc_get_thread_counting)
+
+    var classes_thread = kperf.KPC_CLASS_CONFIGURABLE_MASK
+    print(t"- Setting classes: {classes_thread}")
+    assert_success(kperf.kpc_set_thread_counting(classes_thread))
+
     print_counting(kperf.kpc_get_thread_counting)
 
     # ===--------------------------------------------------------------------===
@@ -121,6 +127,21 @@ def run_kperf_ffi_example() raises:
 
     assert_success(kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val)))
     print("Reading all counters:", val)
+
+
+    # ===--------------------------------------------------------------------===
+    # Config
+    # ===--------------------------------------------------------------------===
+    var db = kperf_data.KPEPDb.MutPointerType.unsafe_dangling()
+    assert_success(kperf_data.kpep_db_create({}, UnsafePointer(to=db)))
+
+    var config = kperf_data.KPEPConfig.MutPointerType.unsafe_dangling()
+    assert_success(kperf_data.kpep_config_create(db, UnsafePointer(to=config)))
+
+
+
+    kperf_data.kpep_config_free(config)
+
 
 
 def main() raises:

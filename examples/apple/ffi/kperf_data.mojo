@@ -121,8 +121,9 @@ def run_kperf_data_ffi_example() raises:
     # Get event's names, alias and description by index
     # ===--------------------------------------------------------------------===
     var event_idx = 1
-    print(t"Get event info by index: {event_idx}")
-    print_event_info(db_events_arr[event_idx])
+    for event_idx in range(db_event_count):
+        print(t"Get event info by index: {event_idx}")
+        print_event_info(db_events_arr[event_idx])
 
     # ===--------------------------------------------------------------------===
     # Get event's names and alias
