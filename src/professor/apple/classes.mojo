@@ -13,10 +13,13 @@ struct Classes(Copyable, Equatable, RegisterPassable, Writable):
     # ===--------------------------------------------------------------------===
 
     comptime Fixed = Self(KPC_CLASS_FIXED_MASK)
+    """Fixed counters: they always measure the same events."""
 
     comptime Configurable = Self(KPC_CLASS_CONFIGURABLE_MASK)
+    """Counters that can be configured for what events to count."""
 
     comptime Power = Self(KPC_CLASS_POWER_MASK)
+    """Counters that count power related information."""
 
     comptime RawPMU = Self(KPC_CLASS_RAWPMU_MASK)
 

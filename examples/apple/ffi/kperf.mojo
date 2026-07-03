@@ -128,7 +128,6 @@ def run_kperf_ffi_example() raises:
     assert_success(kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val)))
     print("Reading all counters:", val)
 
-
     # ===--------------------------------------------------------------------===
     # Config
     # ===--------------------------------------------------------------------===
@@ -138,10 +137,7 @@ def run_kperf_ffi_example() raises:
     var config = kperf_data.KPEPConfig.MutPointerType.unsafe_dangling()
     assert_success(kperf_data.kpep_config_create(db, UnsafePointer(to=config)))
 
-
-
     kperf_data.kpep_config_free(config)
-
 
 
 def main() raises:

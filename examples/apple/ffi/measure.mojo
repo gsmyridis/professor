@@ -17,10 +17,14 @@ def find_event(
     if you're not sure of the exact spelling.
     """
     var name_buf = name
-    var event: OptionalUnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin] = {}
+    var event: OptionalUnsafePointer[
+        kperf_data.KPEPEvent, MutUntrackedOrigin
+    ] = {}
     assert_success(
         kperf_data.kpep_db_event(
-            db, name_buf.as_c_string_slice().unsafe_ptr(), UnsafePointer(to=event)
+            db,
+            name_buf.as_c_string_slice().unsafe_ptr(),
+            UnsafePointer(to=event),
         )
     )
     return event.value()
@@ -75,7 +79,9 @@ def measure_function() raises:
     for name in event_names:
         var ev = find_event(db, name)
         assert_success(
-            kperf_data.kpep_config_add_event(cfg, UnsafePointer(to=ev), 1, no_err)
+            kperf_data.kpep_config_add_event(
+                cfg, UnsafePointer(to=ev), 1, no_err
+            )
         )
 
     # ===--------------------------------------------------------------===
@@ -84,7 +90,9 @@ def measure_function() raises:
     #    With these 5 events it'll be FIXED_MASK | CONFIGURABLE_MASK.
     # ===--------------------------------------------------------------===
     var classes: UInt32 = 0
-    assert_success(kperf_data.kpep_config_kpc_classes(cfg, UnsafePointer(to=classes)))
+    assert_success(
+        kperf_data.kpep_config_kpc_classes(cfg, UnsafePointer(to=classes))
+    )
     print(t"Classes to activate based on config: {classes}")
 
     # ===--------------------------------------------------------------===
@@ -94,7 +102,9 @@ def measure_function() raises:
     #    of hand-encoding PMU event selectors.
     # ===--------------------------------------------------------------===
     var kpc_count: c_size_t = 0
-    assert_success(kperf_data.kpep_config_kpc_count(cfg, UnsafePointer(to=kpc_count)))
+    assert_success(
+        kperf_data.kpep_config_kpc_count(cfg, UnsafePointer(to=kpc_count))
+    )
 
     var kpc_config_buf = alloc(
         Layout[kperf.KPCConfig](count=Int(kpc_count))
@@ -139,7 +149,9 @@ def measure_function() raises:
         kperf_data.kpep_config_events_count(cfg, UnsafePointer(to=events_count))
     )
 
-    var slot_map = alloc(Layout[c_size_t](count=Int(events_count))).unsafe_leak()
+    var slot_map = alloc(
+        Layout[c_size_t](count=Int(events_count))
+    ).unsafe_leak()
     assert_success(
         kperf_data.kpep_config_kpc_map(
             cfg, slot_map, events_count * UInt(size_of[c_size_t]())
@@ -155,9 +167,13 @@ def measure_function() raises:
     #     per-thread counters, so the delta isolates exactly what happened
     #     between the two reads.
     # ===--------------------------------------------------------------===
-    assert_success(kperf.kpc_get_thread_counters(0, UInt32(counter_count), before))
+    assert_success(
+        kperf.kpc_get_thread_counters(0, UInt32(counter_count), before)
+    )
     var result = function_to_measure()
-    assert_success(kperf.kpc_get_thread_counters(0, UInt32(counter_count), after))
+    assert_success(
+        kperf.kpc_get_thread_counters(0, UInt32(counter_count), after)
+    )
     print("result:", result)
 
     # ===--------------------------------------------------------------===
