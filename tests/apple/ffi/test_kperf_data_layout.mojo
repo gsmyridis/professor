@@ -69,10 +69,11 @@ struct RawConfig(Movable):
     def __init__(
         out self, db: UnsafePointer[KPEPDb, MutUntrackedOrigin]
     ) raises:
-        var ptr: OptionalUnsafePointer[KPEPConfig, MutUntrackedOrigin] = {}
+        var ptr = UnsafePointer[
+            KPEPConfig, MutUntrackedOrigin
+        ].unsafe_dangling()
         assert_equal(kpep_config_create(db, UnsafePointer(to=ptr)), 0)
-        assert_true(Bool(ptr), "config pointer is null")
-        self.ptr = ptr.value()
+        self.ptr = ptr
 
     def __del__(deinit self):
         kpep_config_free(self.ptr)
@@ -197,7 +198,7 @@ def test_event_layout_description() raises:
     _ = db.ptr
 
 
-def test_known_event_lookup_fields_match_framework_getters() raises:
+def test_apple_event_id_lookup_fields_match_framework_getters() raises:
     var db = RawDatabase()
 
     var inst_name = String("INST_ALL")

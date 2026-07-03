@@ -1,4 +1,4 @@
-from .ffi.kperf_data import (
+from professor.apple.ffi.kperf_data import (
     KPEPEvent,
     kpep_event_name,
     kpep_event_alias,
@@ -12,13 +12,15 @@ from professor.ffi_utils import (
 )
 
 
-struct Event[origin: ImmutOrigin](Copyable, ImplicitlyCopyable, Movable):
+struct EventDescriptor[origin: ImmutOrigin](
+    Copyable, ImplicitlyCopyable, Movable
+):
     """A borrowed, non-owning view of one event entry.
 
-    `Event` never allocates or frees memory: the `KPEPEvent` it points to is
-    owned by the `Database` (or `Config`) that produced it. `origin` ties an
-    `Event`'s lifetime to that owner, so it cannot be returned or stored past
-    the point where the owner is destroyed.
+    `EventDescriptor` never allocates or frees memory: the `KPEPEvent` it
+    points to is owned by the `Database` (or `Config`) that produced it.
+    `origin` ties an `EventDescriptor`'s lifetime to that owner, so it cannot
+    be returned or stored past the point where the owner is destroyed.
     """
 
     var _ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]

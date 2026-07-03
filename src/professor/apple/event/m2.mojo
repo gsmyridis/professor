@@ -1,6 +1,10 @@
+from .event import Event
+
 
 @fieldwise_init
-struct M2Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
+struct M2Event(
+    Equatable, Event, ImplicitlyCopyable, RegisterPassable, Writable
+):
     """Hardware performance counter events available on M2.
 
     Each variant holds its kpep event name, which keys into the kpep

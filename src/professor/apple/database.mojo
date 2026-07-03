@@ -9,12 +9,18 @@ from .ffi.kperf_data import (
     kpep_db_events_count,
     kpep_db_aliases_count,
     kpep_db_event,
+    kpep_db_aliases,
+    kpep_db_counters_count,
 )
 from .cpu import Cpu, Architecture
-from .event import Event
-from .events import KnownEvent
+from .event import Event, EventDescriptor
+from .classes import Classes
 
-from professor.ffi_utils import cstr_to_slice, ConstCStringPointer
+from professor.ffi_utils import (
+    ConstCStringPointer,
+    cstr_to_slice,
+    cstr_to_string,
+)
 
 
 struct Database(Movable):
@@ -45,7 +51,7 @@ struct Database(Movable):
         kpep_db_free(self._ptr)
 
     # ===--------------------------------------------------------------------===
-    # Database information
+    # Database information methods
     # ===--------------------------------------------------------------------===
 
     def name(self) -> StringSlice[origin_of(self)]:
@@ -80,12 +86,88 @@ struct Database(Movable):
         return Architecture(self._ptr[].architecture)
 
     # ===--------------------------------------------------------------------===
-    # Get event
+    # Aliases methods
     # ===--------------------------------------------------------------------===
 
-    def get_event_by_name[
+    def alias_count(self) raises -> Int:
+        """Gets the number of event aliases in the database.
+
+        Returns:
+            The number of event aliases.
+        """
+        var count: c_size_t = 0
+        if kpep_db_aliases_count(self._ptr, UnsafePointer(to=count)) != 0:
+            raise Error("failed to get alias count")
+        return Int(count)
+
+    def aliases(self) raises -> List[String]:
+        """Returns the alias names for events that are available
+        in the database.
+
+        Returns:
+            A list of event alias names.
+        """
+        var count = self.alias_count()
+        var buf = List[ConstCStringPointer](
+            length=count, fill=ConstCStringPointer(None)
+        )
+        var res = kpep_db_aliases(
+            self._ptr,
+            buf.unsafe_ptr(),
+            c_size_t(count),
+        )
+
+        if res != 0:
+            raise Error("failed to get event aliases")
+
+        var aliases = List[String](length=count, fill="")
+        for i in range(count):
+            aliases[i] = cstr_to_string(buf[i])
+
+        return aliases^
+
+    # ===--------------------------------------------------------------------===
+    # Event methods
+    # ===--------------------------------------------------------------------===
+
+    def event_count(self) raises -> Int:
+        """Get the number of events in the database.
+
+        Returns:
+            The number of events.
+        """
+        var count: c_size_t = 0
+        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
+            raise Error("failed to get event count")
+        return Int(count)
+
+    def events(self) raises -> List[EventDescriptor[origin_of(self)]]:
+        """Returns every event definition in the database.
+
+        Returns:
+            A list with the event handles.
+        """
+        var count: c_size_t = 0
+        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
+            raise Error("failed to get event count")
+
+        if not self._ptr[].event_arr:
+            raise Error("database event array is null")
+
+        # `kpep_db_events` does not round-trip reliably through Mojo's
+        # pointer-buffer FFI here; the contiguous `event_arr` layout is checked
+        # against framework getters in `tests/apple/test_kperf_layout.mojo`.
+        var result = List[EventDescriptor[origin_of(self)]](capacity=Int(count))
+        var base = self._ptr[].event_arr.value()
+        for i in range(Int(count)):
+            result.append(EventDescriptor[origin_of(self)](base + i))
+        return result^
+
+    def get_event[
         origin: Origin
-    ](self, name: StringSlice[origin]) raises -> Event[origin_of(self)]:
+    ](self, *, name: StringSlice[origin]) raises -> EventDescriptor[
+        origin_of(self)
+    ]:
         """Looks up an event by its name.
 
         Args:
@@ -107,57 +189,45 @@ struct Database(Movable):
             raise Error("event not found: " + String(name))
         if not ev:
             raise Error("event lookup returned null: " + String(name))
-        return Event[origin_of(self)](ev.value())
+        return EventDescriptor[origin_of(self)](ev.value())
 
-    # def get_event(self, event: KnownEvent) raises -> Event[origin_of(self)]:
-    #     """Looks up one event by its chip-agnostic identifier.
+    def get_event(
+        self, event: Some[Event]
+    ) raises -> EventDescriptor[origin_of(self)]:
+        """Looks up an event by its typed identifier.
 
-    #     Resolving `event` for this database's `Cpu` always yields a known,
-    #     compile-time string literal, so the lookup never depends on a
-    #     caller-supplied string and its null-termination.
+        Args:
+            event: The event to look up.
 
-    #     Args:
-    #         event: The event to look up.
+        Returns:
+            The matching event.
 
-    #     Returns:
-    #         The matching event.
+        Raises:
+            If `event` is not contained in this database (e.g. it belongs
+            to a different Apple Silicon generation).
+        """
+        return self.get_event(name=event.name())
 
-    #     Raises:
-    #         If this database's CPU generation is unrecognized, or `event` is
-    #         unavailable on it.
-    #     """
-    #     var cpu = self.cpu()
-    #     var resolved = event.on(cpu)
-    #     if not resolved:
-    #         raise Error("event unavailable on this CPU generation")
-    #     var name = resolved.value().name()
+    # ===--------------------------------------------------------------------===
+    # Counter methods
+    # ===--------------------------------------------------------------------===
 
-    def events(self) raises -> List[Event[origin_of(self)]]:
-        """Returns every event in the database."""
+    def counters_count(self, classes: Classes) raises -> Int:
+        """Gets the number of counters for a class mask.
+
+        Args:
+            classes: a class mask.
+
+        Rerutns:
+            The number of counters for the specified classes.
+        """
         var count: c_size_t = 0
-        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
-            raise Error("failed to get event count")
+        var res = kpep_db_counters_count(
+            self._ptr,
+            UInt8(classes._inner),
+            UnsafePointer(to=count),
+        )
+        if res != 0:
+            raise Error("failed to get counters count for specified classes")
 
-        if not self._ptr[].event_arr:
-            raise Error("database event array is null")
-
-        # `kpep_db_events` does not round-trip reliably through Mojo's
-        # pointer-buffer FFI here; the contiguous `event_arr` layout is checked
-        # against framework getters in `tests/apple/test_kperf_layout.mojo`.
-        var result = List[Event[origin_of(self)]](capacity=Int(count))
-        var base = self._ptr[].event_arr.value()
-        for i in range(Int(count)):
-            result.append(Event[origin_of(self)](base + i))
-        return result^
-
-    def event_count(self) raises -> Int:
-        var count: c_size_t = 0
-        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
-            raise Error("failed to get event count")
-        return Int(count)
-
-    def alias_count(self) raises -> Int:
-        var count: c_size_t = 0
-        if kpep_db_aliases_count(self._ptr, UnsafePointer(to=count)) != 0:
-            raise Error("failed to get alias count")
         return Int(count)

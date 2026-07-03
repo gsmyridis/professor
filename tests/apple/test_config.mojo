@@ -1,33 +1,27 @@
 from std.testing import (
     assert_equal,
-    assert_false,
     assert_raises,
-    assert_true,
-    assert_not_equal,
 )
 from std.testing import TestSuite
-from std.sys import CompilationTarget
 
-from professor.apple import kperf_data
-from professor.apple.events import KnownEvent
-from professor.apple.cpu import Cpu
+from professor.apple import Configuration, Database, AppleEvent
 
 
 def test_config_create() raises:
-    var db = kperf_data.Database()
-    _ = kperf_data.Config(db)
+    var db = Database()
+    _ = Configuration(db)
 
 
 def test_config_starts_with_no_events() raises:
-    var db = kperf_data.Database()
-    var cfg = kperf_data.Config(db)
+    var db = Database()
+    var cfg = Configuration(db)
     assert_equal(cfg.events_count(), 0)
 
 
 def test_config_add_event() raises:
-    var db = kperf_data.Database()
-    var ev = db.get_event(KnownEvent.InstAll)
-    var cfg = kperf_data.Config(db)
+    var db = Database()
+    var ev = db.get_event(AppleEvent.InstAll)
+    var cfg = Configuration(db)
     cfg.force_counters()
     cfg.add_event(ev)
 
@@ -38,10 +32,10 @@ def test_config_add_event() raises:
 
 
 def test_config_remove_event() raises:
-    var db = kperf_data.Database()
-    var ev = db.get_event(KnownEvent.InstAll)
+    var db = Database()
+    var ev = db.get_event(AppleEvent.InstAll)
 
-    var cfg = kperf_data.Config(db)
+    var cfg = Configuration(db)
     cfg.force_counters()
     cfg.add_event(ev)
     assert_equal(cfg.events_count(), 1)
@@ -51,8 +45,8 @@ def test_config_remove_event() raises:
 
 
 def test_config_remove_event_out_of_range_raises() raises:
-    var db = kperf_data.Database()
-    var cfg = kperf_data.Config(db)
+    var db = Database()
+    var cfg = Configuration(db)
     with assert_raises(contains="failed to remove event"):
         cfg.remove_event(0)
 

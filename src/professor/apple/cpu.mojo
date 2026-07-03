@@ -9,13 +9,25 @@ from std.sys import CompilationTarget
 struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Apple Silicon chip generation, as identified by `kpep_db.name`."""
 
-    comptime M1 = Self(0)
-    comptime M2 = Self(1)
-    comptime M3 = Self(2)
-    comptime M4 = Self(3)
-    comptime M5 = Self(4)
+    # ===--------------------------------------------------------------------===
+    # Aliases
+    # ===--------------------------------------------------------------------===
+
+    comptime M1 = Self(1 << 0)
+    comptime M2 = Self(1 << 1)
+    comptime M3 = Self(1 << 2)
+    comptime M4 = Self(1 << 3)
+    comptime M5 = Self(1 << 4)
+
+    # ===--------------------------------------------------------------------===
+    # Field
+    # ===--------------------------------------------------------------------===
 
     var _tag: UInt8
+
+    # ===--------------------------------------------------------------------===
+    # Lifetime methods
+    # ===--------------------------------------------------------------------===
 
     @staticmethod
     def host() -> Self:
@@ -66,6 +78,10 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
 
         raise Error(t"Unrecognised database name: {database_name}")
 
+    # ===--------------------------------------------------------------------===
+    # Writable methods
+    # ===--------------------------------------------------------------------===
+
     def write_to(self, mut writer: Some[Writer]):
         if self == Self.M1:
             writer.write("M1")
@@ -92,12 +108,25 @@ struct Architecture(
     RegisterPassable,
     Writable,
 ):
+
+    # ===--------------------------------------------------------------------===
+    # Aliases
+    # ===--------------------------------------------------------------------===
+
     comptime I386 = Self(0)
     comptime X86_64 = Self(1)
     comptime Arm = Self(2)
     comptime Arm64 = Self(3)
 
+    # ===--------------------------------------------------------------------===
+    # Fields
+    # ===--------------------------------------------------------------------===
+
     var _inner: UInt32
+
+    # ===--------------------------------------------------------------------===
+    # Writable methods
+    # ===--------------------------------------------------------------------===
 
     def write_to(self, mut writer: Some[Writer]):
         if self._inner == Self.I386._inner:

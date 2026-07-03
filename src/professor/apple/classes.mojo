@@ -6,6 +6,7 @@ from .ffi.kperf import (
 )
 
 
+# TODO: Rethink the classes abstraction
 @fieldwise_init
 struct Classes(Copyable, Equatable, RegisterPassable, Writable):
     # ===--------------------------------------------------------------------===

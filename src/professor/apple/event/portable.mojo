@@ -1,12 +1,20 @@
+from professor.apple.cpu import Cpu
+
+from .cpu import CpuEvent
+from .event import Event
 
 
 @fieldwise_init
-struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
-    """Hardware performance counter events available on M3.
+struct PortableEvent(
+    Equatable, Event, ImplicitlyCopyable, RegisterPassable, Writable
+):
+    """Hardware performance counter event ids available on every Apple
+    Silicon generation (M1 through M5).
 
     Each variant holds its kpep event name, which keys into the kpep
     database; all other event metadata is runtime information owned by
-    `Database`.
+    `Database`. Because these events exist on every supported generation,
+    `on(cpu)` always succeeds.
     """
 
     var _name: StaticString
@@ -32,8 +40,8 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Retired conditional branch instructions that mispredicted."""
 
     comptime BranchIndirMispredNonspec = Self("BRANCH_INDIR_MISPRED_NONSPEC")
-    """Retired indirect branch instructions including calls and returns that
-    mispredicted."""
+    """Retired indirect branch instructions including calls and returns
+    that mispredicted."""
 
     comptime BranchMispredNonspec = Self("BRANCH_MISPRED_NONSPEC")
     """Instruction architecturally executed, mispredicted branch."""
@@ -106,9 +114,6 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     comptime InstSimdAlu = Self("INST_SIMD_ALU")
     """Retired non-load/store Advanced SIMD and FP Unit instructions."""
 
-    comptime InstSimdAluVec = Self("INST_SIMD_ALU_VEC")
-    """Retired non-load/store vector Advanced SIMD  instructions."""
-
     comptime InstSimdLd = Self("INST_SIMD_LD")
     """Retired load Advanced SIMD and FP Unit instructions."""
 
@@ -169,37 +174,20 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     comptime LdUnitUop = Self("LD_UNIT_UOP")
     """Uops that flowed through the Load Unit."""
 
-    comptime LdstUnitOldL1DCacheMiss = Self("LDST_UNIT_OLD_L1D_CACHE_MISS")
-    """Cycles while an old load or store uop is waiting for data after an L1
-    Data Cache miss."""
-
-    comptime LdstUnitWaitingOldL1DCacheMiss = Self(
-        "LDST_UNIT_WAITING_OLD_L1D_CACHE_MISS"
-    )
-    """Cycles while an old load or store uop is waiting for data after an L1
-    Data Cache miss, and no uop was issued by the scheduler, prioritized."""
-
     comptime LdstX64Uop = Self("LDST_X64_UOP")
     """Load and store uops that crossed a 64B boundary."""
 
     comptime LdstXpgUop = Self("LDST_XPG_UOP")
-    """Load and store uops that crossed a 16KiB page boundary; an SME access
-    is considered cross-page if any bytes are accessed in the high portion
-    (second page), regardless if any bytes are accessed in the low portion
-    (first page), after predication is applied. An SME operation that only
-    touches the low portion (first page) after predication is applied is not
-    considered cross-page."""
+    """Load and store uops that crossed a 16KiB page boundary; an SME
+    access is considered cross-page if any bytes are accessed in the high
+    portion (second page), regardless if any bytes are accessed in the low
+    portion (first page), after predication is applied. An SME operation
+    that only touches the low portion (first page) after predication is
+    applied is not considered cross-page."""
 
     comptime MapDispatchBubble = Self("MAP_DISPATCH_BUBBLE")
-    """Cycles while the Map Unit had no uops to process and was not stalled."""
-
-    comptime MapDispatchBubbleIc = Self("MAP_DISPATCH_BUBBLE_IC")
-    """Cycles while the Map Unit had no uops to process due to L1
-    Instruction Cache and was not stalled."""
-
-    comptime MapDispatchBubbleItlb = Self("MAP_DISPATCH_BUBBLE_ITLB")
-    """Cycles while the Map Unit had no uops to process due to L1
-    Instruction TLB and was not stalled."""
+    """Cycles while the Map Unit had no uops to process and was not
+    stalled."""
 
     comptime MapIntUop = Self("MAP_INT_UOP")
     """Mapped Integer Unit uops."""
@@ -223,9 +211,6 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Cycles while the Map Unit was stalled because of Dispatch back
     pressure."""
 
-    comptime MapUop = Self("MAP_UOP")
-    """Mapped uops."""
-
     comptime MmuTableWalkData = Self("MMU_TABLE_WALK_DATA")
     """Table walk memory requests on behalf of data accesses."""
 
@@ -237,10 +222,6 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
 
     comptime ScheduleEmpty = Self("SCHEDULE_EMPTY")
     """Cycles while the uop scheduler is empty."""
-
-    comptime ScheduleUop = Self("SCHEDULE_UOP_ANY")
-    """Cycles while the uop scheduler issued at least 1 uop to any execution
-    unit."""
 
     comptime StMemOrderViolLdNonspec = Self("ST_MEM_ORDER_VIOL_LD_NONSPEC")
     """Retired core store uops that triggered memory order violations with
@@ -268,3 +249,7 @@ struct M3Event(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     def name(self) -> StaticString:
         """The kpep event name, e.g. `"INST_ALL"`."""
         return self._name
+
+    def on(self, cpu: Cpu) -> CpuEvent:
+        """Resolves this event for `cpu`; always succeeds."""
+        return CpuEvent(cpu, self._name)

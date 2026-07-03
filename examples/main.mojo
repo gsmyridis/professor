@@ -6,8 +6,8 @@ from professor.apple.database import Database
 # struct SomeStruct(Equatable, RegisterPassable):
 #     var field: StaticString
 
-def main() raises:
 
+def main() raises:
     var db = Database()
     for event in db.events():
         print(event.alias())
