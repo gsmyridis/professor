@@ -9,25 +9,27 @@ from professor.apple.ffi.testing import assert_success
 from professor.ffi_utils import cstr_to_string, ConstCStringPointer
 
 
-def print_event_info(event: UnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin]) raises:
+def print_event_info(
+    event: UnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin]
+) raises:
     var event_name: ConstCStringPointer = {}
     var event_alias: ConstCStringPointer = {}
     var event_description: ConstCStringPointer = {}
     assert_success(
-        kperf_data.kpep_event_name(
-            event, UnsafePointer(to=event_name)
-        )
+        kperf_data.kpep_event_name(event, UnsafePointer(to=event_name))
     )
     print("\t- Name:", cstr_to_string(event_name))
 
     assert_success(
-        kperf_data.kpep_event_alias(
-            event, UnsafePointer(to=event_alias)
-        )
+        kperf_data.kpep_event_alias(event, UnsafePointer(to=event_alias))
     )
     print("\t- Alias:", cstr_to_string(event_alias))
 
-    assert_success(kperf_data.kpep_event_description(event, UnsafePointer(to=event_description)))
+    assert_success(
+        kperf_data.kpep_event_description(
+            event, UnsafePointer(to=event_description)
+        )
+    )
     print("\t- Description:", cstr_to_string(event_description))
 
 
@@ -129,13 +131,16 @@ def run_kperf_data_ffi_example() raises:
     # Get event's names and alias
     # ===--------------------------------------------------------------------===
     var event_name = "FIXED_CYCLES"
-    var event: OptionalUnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin] = {}
+    var event: OptionalUnsafePointer[
+        kperf_data.KPEPEvent, MutUntrackedOrigin
+    ] = {}
     print(t"Get event info by name: '{event_name}'")
     assert_success(
         kperf_data.kpep_db_event(
             db,
             event_name.as_c_string_slice().unsafe_ptr(),
-            UnsafePointer(to=event))
+            UnsafePointer(to=event),
+        )
     )
     print_event_info(event.value())
 
