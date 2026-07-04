@@ -31,20 +31,23 @@ struct Database(Movable):
     be freed exactly once.
     """
 
-    var _ptr: UnsafePointer[KPEPDb, MutUntrackedOrigin]
+    comptime UnsafePointerType = UnsafePointer[KPEPDb, MutUntrackedOrigin]
+
+    var _ptr: Self.UnsafePointerType
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self) raises:
-        # SAFETY: `ptr` is scratch storage for the C "out parameter" below.
-        # It is never read before `kpep_db_create` writes the real address
-        # into it, and we only commit it to `self._ptr` after checking the
-        # call succeeded.
-        var ptr = UnsafePointer[KPEPDb, MutUntrackedOrigin].unsafe_dangling()
+        var ptr = Self.UnsafePointerType.unsafe_dangling()
         if kpep_db_create({}, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create database")
+
+        return self.__init__(ptr=ptr)
+
+    @always_inline
+    def __init__(out self, *, ptr: Self.UnsafePointerType):
         self._ptr = ptr
 
     def __del__(deinit self):

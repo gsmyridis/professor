@@ -14,3 +14,4 @@ from .event import (
     M5Event,
     PortableEvent,
 )
+from .version import Version

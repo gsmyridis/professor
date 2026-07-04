@@ -1,5 +1,7 @@
 from std.sys import CompilationTarget
 
+from .ffi.kperf import kpc_cpu_string
+
 # ===------------------------------------------------------------------------===
 # CPU
 # ===------------------------------------------------------------------------===
@@ -95,6 +97,29 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
             writer.write("M5")
         else:
             self.write_repr_to(writer)
+
+
+    @always_inline
+    def id() -> String:
+        """Returns the current CPU identification string.
+
+        This function does not require root privileges.
+
+        Returns:
+            The current CPU identification string.
+        """
+        # 64 bytes is assumed to be enough.
+        # InlineArray means string does not require allocation.
+        var buf = InlineArray[UInt8, 64](fill=0)
+        var n = kpc_cpu_string(
+            buf.unsafe_ptr().bitcast[c_char](), c_size_t(len(buf))
+        )
+        if n < 0:
+            return String()
+
+        # SAFETY: It is assumed that the CPU identification
+        # string is ASCII with length lower than 64 bytes.
+        return String(unsafe_from_utf8_ptr=buf.unsafe_ptr())
 
 
 # ===------------------------------------------------------------------------===

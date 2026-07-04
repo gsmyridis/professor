@@ -1,4 +1,4 @@
-from professor.apple import Database, Configuration, PortableEvent
+from professor.apple import Database, Configuration, PortableEvent, Version
 from std.testing import assert_equal
 
 
@@ -10,6 +10,9 @@ def function_to_measure() -> UInt64:
 
 
 def measure_function() raises:
+    var version = Version()
+    print("Version:", version)
+
     # ===--------------------------------------------------------------===
     # 1. Open the kpep database.
     # ===--------------------------------------------------------------===
