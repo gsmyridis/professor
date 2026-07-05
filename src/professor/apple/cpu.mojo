@@ -1,4 +1,5 @@
 from std.sys import CompilationTarget
+from std.ffi import c_char, c_size_t
 
 from .ffi.kperf import kpc_cpu_string
 
@@ -100,7 +101,7 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
 
 
     @always_inline
-    def id() -> String:
+    def id(self) -> String:
         """Returns the current CPU identification string.
 
         This function does not require root privileges.

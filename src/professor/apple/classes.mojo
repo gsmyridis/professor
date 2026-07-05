@@ -35,7 +35,7 @@ struct Classes(Copyable, Equatable, RegisterPassable, Writable):
     # ===--------------------------------------------------------------------===
 
     def __or__(self, other: Self) -> Self:
-        return Self(self._inner & other._inner)
+        return Self(self._inner | other._inner)
 
     def __and__(self, other: Self) -> Self:
         return Self(self._inner & other._inner)

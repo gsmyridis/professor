@@ -25,8 +25,8 @@ struct EventDescriptor[origin: ImmutOrigin](
 
     var _ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
 
-    def __init__(out self, ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]):
-        self._ptr = ptr
+    def __init__(out self, *, unsafe_ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]):
+        self._ptr = unsafe_ptr
 
     def name(self) raises -> StringSlice[Self.origin]:
         """Unique name of the event, such as `"INST_RETIRED.ANY"`."""

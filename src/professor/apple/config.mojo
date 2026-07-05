@@ -43,16 +43,16 @@ struct Configuration[origin: ImmutOrigin](Movable):
     `kpep_config` keeps a pointer back into that database.
     """
 
-    comptime _PointerType = UnsafePointer[KPEPConfig, MutUntrackedOrigin]
+    comptime _UnsafePointerType = UnsafePointer[KPEPConfig, MutUntrackedOrigin]
 
-    var _ptr: Self._PointerType
+    var _ptr: Self._UnsafePointerType
 
     # ===--------------------------------------------------------------------===
     # Lifetime methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self, ref[Self.origin] db: Database) raises:
-        var ptr = Self._PointerType.unsafe_dangling()
+        var ptr = Self._UnsafePointerType.unsafe_dangling()
         if kpep_config_create(db._ptr, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create config")
         self._ptr = ptr
@@ -120,7 +120,7 @@ struct Configuration[origin: ImmutOrigin](Movable):
 
         var result = List[EventDescriptor[Self.origin]](capacity=count)
         for i in range(count):
-            result.append(EventDescriptor[Self.origin](buf[i]))
+            result.append(EventDescriptor[Self.origin](unsafe_ptr=buf[i]))
         return result^
 
     # ===--------------------------------------------------------------------===

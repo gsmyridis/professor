@@ -1,4 +1,5 @@
 from .ffi import kperf as ffi_kperf
+from .ffi.kperf import KPCConfig
 from std.ffi import c_char, c_int, c_size_t
 
 
@@ -75,7 +76,7 @@ def set_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer containing the config register values.
     """
-    if ffi_kperf.kpc_set_config(classes, config.value) != 0:
+    if ffi_kperf.kpc_set_config(classes, UnsafePointer(to=config)) != 0:
         raise Error("failed to set config")
 
 
@@ -90,7 +91,7 @@ def get_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer to receive the config register values.
     """
-    if ffi_kperf.kpc_get_config(classes, config.value) != 0:
+    if ffi_kperf.kpc_get_config(classes, UnsafePointer(to=config)) != 0:
         raise Error("failed to get config")
 
 

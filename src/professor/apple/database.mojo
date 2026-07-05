@@ -44,14 +44,18 @@ struct Database(Movable):
         if kpep_db_create({}, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create database")
 
-        return self.__init__(ptr=ptr)
+        return self.__init__(unsafe_ptr=ptr)
 
     @always_inline
-    def __init__(out self, *, ptr: Self.UnsafePointerType):
-        self._ptr = ptr
+    def __init__(out self, *, unsafe_ptr: Self.UnsafePointerType):
+        self._ptr = unsafe_ptr
 
     def __del__(deinit self):
         kpep_db_free(self._ptr)
+
+    @always_inline
+    def unsafe_ptr(self) -> Self.UnsafePointerType:
+        return self._ptr
 
     # ===--------------------------------------------------------------------===
     # Database information methods
@@ -219,7 +223,7 @@ struct Database(Movable):
         """Gets the number of counters for a class mask.
 
         Args:
-            classes: a class mask.
+            classes: A class mask.
 
         Rerutns:
             The number of counters for the specified classes.
