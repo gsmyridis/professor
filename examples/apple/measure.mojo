@@ -1,4 +1,4 @@
-from professor.apple import Database, Configuration, PortableEvent, Version
+from professor.apple import Database, ConfigBuilder, PortableEvent, Version
 from std.testing import assert_equal
 
 
@@ -21,7 +21,7 @@ def measure_function() raises:
     # ===--------------------------------------------------------------===
     # 2. Create an empty config builder tied to that database.
     # ===--------------------------------------------------------------===
-    var cfg = Configuration(db)
+    var cfg = ConfigBuilder(db)
 
     # ===--------------------------------------------------------------===
     # 3. Force-counters MUST be called before any add_event on Apple

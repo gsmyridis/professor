@@ -167,7 +167,7 @@ struct Database(Movable):
         var result = List[EventDescriptor[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):
-            result.append(EventDescriptor[origin_of(self)](base + i))
+            result.append(EventDescriptor[origin_of(self)](unsafe_ptr=base + i))
         return result^
 
     def get_event[
@@ -196,7 +196,7 @@ struct Database(Movable):
             raise Error("event not found: " + String(name))
         if not ev:
             raise Error("event lookup returned null: " + String(name))
-        return EventDescriptor[origin_of(self)](ev.value())
+        return EventDescriptor[origin_of(self)](unsafe_ptr=ev.value())
 
     def get_event(
         self, event: Some[Event]

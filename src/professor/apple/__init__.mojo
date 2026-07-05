@@ -1,5 +1,5 @@
 from .classes import Classes
-from .config import Configuration
+from .config import ConfigBuilder, Configuration
 from .cpu import Cpu, Architecture
 from .database import Database
 from .event import (
@@ -15,3 +15,4 @@ from .event import (
     PortableEvent,
 )
 from .version import Version
+from .sampler import Sampler, ThreadSampler

@@ -3,7 +3,6 @@ from .ffi.kperf import KPCConfig
 from std.ffi import c_char, c_int, c_size_t
 
 
-
 # TODO: classes should be a compbination of enum-like structs
 @always_inline
 def set_thread_counting(classes: UInt32) raises:
@@ -30,6 +29,19 @@ def get_thread_counting() -> UInt32:
         occurs or no class is set.
     """
     return ffi_kperf.kpc_get_thread_counting()
+
+
+@always_inline
+def set_counting(classes: UInt32) raises:
+    """Sets PMC classes to enable global counting."""
+    if ffi_kperf.kpc_set_counting(classes) != 0:
+        raise Error("failed to set global counting")
+
+
+@always_inline
+def get_counting() -> UInt32:
+    """Gets running PMC classes."""
+    return ffi_kperf.kpc_get_counting()
 
 
 @always_inline
@@ -67,7 +79,7 @@ def get_counter_count(classes: UInt32) -> UInt32:
 
 
 @always_inline
-def set_config(classes: UInt32, mut config: KPCConfig) raises:
+def set_config(classes: UInt32, mut config: List[KPCConfig]) raises:
     """Sets config registers.
 
     `config` should contain at least `get_config_count(classes)` elements.
@@ -76,12 +88,12 @@ def set_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer containing the config register values.
     """
-    if ffi_kperf.kpc_set_config(classes, UnsafePointer(to=config)) != 0:
+    if ffi_kperf.kpc_set_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to set config")
 
 
 @always_inline
-def get_config(classes: UInt32, mut config: KPCConfig) raises:
+def get_config(classes: UInt32, mut config: List[KPCConfig]) raises:
     """Gets config registers.
 
     `config` should have room for at least `get_config_count(classes)`
@@ -91,7 +103,7 @@ def get_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer to receive the config register values.
     """
-    if ffi_kperf.kpc_get_config(classes, UnsafePointer(to=config)) != 0:
+    if ffi_kperf.kpc_get_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to get config")
 
 
