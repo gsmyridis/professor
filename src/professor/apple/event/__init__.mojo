@@ -7,4 +7,4 @@ from .m4 import M4Event
 from .m5 import M5Event
 from .apple import AppleEvent
 from .portable import PortableEvent
-from .descriptor import EventDescriptor
+from .db import DatabaseEvent

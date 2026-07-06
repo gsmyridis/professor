@@ -6,7 +6,7 @@ from .event import (
     Event,
     AppleEvent,
     CpuEvent,
-    EventDescriptor,
+    DatabaseEvent,
     M1Event,
     M2Event,
     M3Event,

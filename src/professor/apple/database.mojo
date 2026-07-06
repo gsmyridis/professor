@@ -14,7 +14,7 @@ from .ffi.kperf_data import (
     kpep_db_counters_count,
 )
 from .cpu import Cpu, Architecture
-from .event import Event, EventDescriptor
+from .event import Event, DatabaseEvent
 from .classes import Classes
 
 from professor.ffi_utils import (
@@ -149,7 +149,7 @@ struct Database(Movable):
             raise Error("failed to get event count")
         return Int(count)
 
-    def events(self) raises -> List[EventDescriptor[origin_of(self)]]:
+    def events(self) raises -> List[DatabaseEvent[origin_of(self)]]:
         """Returns every event definition in the database.
 
         Returns:
@@ -165,15 +165,15 @@ struct Database(Movable):
         # `kpep_db_events` does not round-trip reliably through Mojo's
         # pointer-buffer FFI here; the contiguous `event_arr` layout is checked
         # against framework getters in `tests/apple/test_kperf_layout.mojo`.
-        var result = List[EventDescriptor[origin_of(self)]](capacity=Int(count))
+        var result = List[DatabaseEvent[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):
-            result.append(EventDescriptor[origin_of(self)](unsafe_ptr=base + i))
+            result.append(DatabaseEvent[origin_of(self)](unsafe_ptr=base + i))
         return result^
 
     def get_event[
         origin: ImmutOrigin
-    ](self, *, unsafe_name: CStringSlice[origin]) raises -> EventDescriptor[
+    ](self, *, unsafe_name: CStringSlice[origin]) raises -> DatabaseEvent[
         origin_of(self)
     ]:
         """Looks up an event by a null-terminated name or alias.
@@ -197,11 +197,11 @@ struct Database(Movable):
             raise Error("event not found: " + String(unsafe_name))
         if not ev:
             raise Error("event lookup returned null: " + String(unsafe_name))
-        return EventDescriptor[origin_of(self)](unsafe_ptr=ev.value())
+        return DatabaseEvent[origin_of(self)](unsafe_ptr=ev.value())
 
     def get_event(
         self, event: Some[Event]
-    ) raises -> EventDescriptor[origin_of(self)]:
+    ) raises -> DatabaseEvent[origin_of(self)]:
         """Looks up an event by its typed identifier.
 
         Args:
