@@ -12,14 +12,14 @@ from professor.ffi_utils import (
 )
 
 
-struct EventDescriptor[origin: ImmutOrigin](
+struct DatabaseEvent[origin: ImmutOrigin](
     Copyable, ImplicitlyCopyable, Movable
 ):
     """A borrowed, non-owning view of one event entry.
 
-    `EventDescriptor` never allocates or frees memory: the `KPEPEvent` it
+    `DatabaseEvent` never allocates or frees memory: the `KPEPEvent` it
     points to is owned by the `Database` (or `Config`) that produced it.
-    `origin` ties an `EventDescriptor`'s lifetime to that owner, so it cannot
+    `origin` ties a `DatabaseEvent`'s lifetime to that owner, so it cannot
     be returned or stored past the point where the owner is destroyed.
     """
 

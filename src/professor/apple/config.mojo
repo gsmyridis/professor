@@ -19,7 +19,7 @@ from .ffi.kperf_data import (
     kpep_config_error_desc,
 )
 from .database import Database
-from .event import EventDescriptor
+from .event import DatabaseEvent
 from .classes import Classes
 from .kperf import get_counter_count
 
@@ -64,6 +64,7 @@ struct CountMode(RegisterPassable):
 # ===-----------------------------------------------------------------------===
 # KPEP Configuration
 # ===-----------------------------------------------------------------------===
+
 
 struct Configuration(Movable):
     """Owned runtime plan for programming and reading KPC counters.
@@ -123,7 +124,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
 
     This struct owns a `KPEPConfig` handle created by `kpep_config_create`.
     The handle belongs to Apple's `kperfdata` layer and translates database
-    event descriptors into KPC counter classes, counter configuration words,
+    database events into KPC counter classes, counter configuration words,
     and event-to-counter-slot mappings.
 
     `origin` ties the builder's lifetime to the `Database` it was built from,
@@ -154,7 +155,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
 
     def add_event(
         mut self,
-        var event: EventDescriptor[Self.origin],
+        var event: DatabaseEvent[Self.origin],
         *,
         mode: CountMode = CountMode.Userspace,
     ) raises:
@@ -193,7 +194,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
             raise Error("failed to get event count")
         return Int(count)
 
-    def events(self) raises -> List[EventDescriptor[Self.origin]]:
+    def events(self) raises -> List[DatabaseEvent[Self.origin]]:
         """Returns every event added to this configuration."""
         var count = self.events_count()
         var buf = List[UnsafePointer[KPEPEvent, MutUntrackedOrigin]](
@@ -213,9 +214,9 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
         ):
             raise Error("failed to get events")
 
-        var result = List[EventDescriptor[Self.origin]](capacity=count)
+        var result = List[DatabaseEvent[Self.origin]](capacity=count)
         for i in range(count):
-            result.append(EventDescriptor[Self.origin](unsafe_ptr=buf[i]))
+            result.append(DatabaseEvent[Self.origin](unsafe_ptr=buf[i]))
         return result^
 
     # ===--------------------------------------------------------------------===
