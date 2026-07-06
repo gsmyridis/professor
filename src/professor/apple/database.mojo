@@ -1,4 +1,5 @@
-from std.ffi import c_size_t, c_char
+from std.ffi import c_size_t, c_char, CStringSlice
+from std.sys import size_of
 
 from .ffi.kperf_data import (
     KPEPDb,
@@ -121,7 +122,7 @@ struct Database(Movable):
         var res = kpep_db_aliases(
             self._ptr,
             buf.unsafe_ptr(),
-            c_size_t(count),
+            c_size_t(count * size_of[ConstCStringPointer]()),
         )
 
         if res != 0:
@@ -171,14 +172,14 @@ struct Database(Movable):
         return result^
 
     def get_event[
-        origin: Origin
-    ](self, *, name: StringSlice[origin]) raises -> EventDescriptor[
+        origin: ImmutOrigin
+    ](self, *, unsafe_name: CStringSlice[origin]) raises -> EventDescriptor[
         origin_of(self)
     ]:
-        """Looks up an event by its name.
+        """Looks up an event by a null-terminated name or alias.
 
         Args:
-            name: Name of the event.
+            unsafe_name: Null-terminated event name or alias.
 
         Returns:
             The event.
@@ -189,13 +190,13 @@ struct Database(Movable):
         var ev: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
         var res = kpep_db_event(
             self._ptr,
-            name.unsafe_ptr().bitcast[c_char](),
+            unsafe_name.unsafe_ptr().bitcast[c_char](),
             UnsafePointer(to=ev),
         )
         if res != 0:
-            raise Error("event not found: " + String(name))
+            raise Error("event not found: " + String(unsafe_name))
         if not ev:
-            raise Error("event lookup returned null: " + String(name))
+            raise Error("event lookup returned null: " + String(unsafe_name))
         return EventDescriptor[origin_of(self)](unsafe_ptr=ev.value())
 
     def get_event(
@@ -213,7 +214,7 @@ struct Database(Movable):
             If `event` is not contained in this database (e.g. it belongs
             to a different Apple Silicon generation).
         """
-        return self.get_event(name=event.name())
+        return self.get_event(unsafe_name=event.name().as_c_string_slice())
 
     # ===--------------------------------------------------------------------===
     # Counter methods
@@ -231,7 +232,7 @@ struct Database(Movable):
         var count: c_size_t = 0
         var res = kpep_db_counters_count(
             self._ptr,
-            UInt8(classes._inner),
+            UInt8(classes.value()),
             UnsafePointer(to=count),
         )
         if res != 0:

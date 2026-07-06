@@ -1,283 +1,331 @@
-# The Apple `kperf`/`kpc` FFI layer: a walkthrough
+# Professor
 
-`kperf.framework` is a private macOS framework that gives near-zero-overhead
-access to the CPU's hardware performance counters — cycles, instructions
-retired, cache misses, branch mispredictions, and dozens of other
-microarchitectural events. It's the same infrastructure that backs
-Instruments and `xctrace`.
+Professor is a Mojo wrapper around Apple Silicon hardware performance
+counters. It lets you measure events such as cycles, retired instructions,
+cache misses, and branch behavior from Mojo code.
 
-Two subsystems inside it matter here:
+The Apple backend uses the same private `kperf`, KPC, and kpep machinery that
+powers Instruments and `xctrace`. Professor adds a safer Mojo layer on top:
+owned handles, typed events, automatic event-to-counter mapping, and per-thread
+sampling helpers.
 
-- **KPC** (Kernel Performance Counters) is the low-level API: which counter
-  _classes_ are active, what each hardware register is programmed to count,
-  and how to read the accumulated values back. `src/professor/apple/ffi/kperf.mojo`
-  binds this directly.
-- **kpep** is the layer on top of KPC that turns this from "poke raw
-  registers" into "ask for an event by name." It ships a per-CPU plist
-  database of named events (`FIXED_CYCLES`, `ARM_BR_MIS_PRED`, ...) and
-  computes the raw KPC register values for whichever ones you pick.
-  `src/professor/apple/ffi/kperf_data.mojo` binds this.
+> Important: this is macOS-only, Apple-Silicon-only, and requires `sudo`.
+> Apple's `kperf.framework` and `kperfdata.framework` are private frameworks:
+> Apple does not publish headers, documentation, or ABI guarantees for them.
+> This project relies on reverse-engineered layouts and behavior. A macOS
+> update can break the bindings or change counter semantics.
 
-> **⚠️ Private & unstable.** `kperf.framework` and `kperfdata.framework` are
-> private — their symbols aren't part of any public SDK, aren't documented
-> by Apple, and carry no ABI stability guarantee. A macOS update can change
-> struct layouts or remove a function outright; that's exactly why this FFI
-> layer resolves every symbol at runtime (`dlopen`/`dlsym`) instead of
-> linking against it. Treat everything in `apple/ffi/` as unstable.
->
-> You'll also need **root** (`sudo`) to run any of this — acquiring and
-> programming the hardware counters requires privileges a normal process
-> doesn't have — and a **macOS / Apple Silicon** machine; the example output
-> below is from an M4.
+## Quick Start
 
-Everything below follows `examples/apple/ffi/measure.mojo` top to bottom —
-open it alongside this doc. Run it yourself with:
+Run the safe sampler example:
 
 ```sh
-sudo pixi run mojo -I src examples/apple/ffi/measure.mojo
+sudo pixi run mojo -I src examples/apple/sampler.mojo
 ```
 
-## The kpep database
-
-The starting point is a database of named events for the current CPU:
+Minimal usage looks like this:
 
 ```mojo
-var db = kperf_data.KPEPDb.MutPointerType.unsafe_dangling()
-assert_success(kperf_data.kpep_db_create({}, UnsafePointer(to=db)))
-```
+from std.benchmark import black_box
 
-Passing an empty name auto-detects the CPU via the `hw.cpufamily` sysctl and
-loads the matching plist from `/usr/share/kpep` (or `/usr/local/share/kpep`).
-The database is keyed by event name and alias; you look one up with
-`kpep_db_event`:
+from professor.apple import Sampler, PortableEvent
 
-```mojo
-var event: OptionalUnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin] = {}
-assert_success(
-    kperf_data.kpep_db_event(db, name_ptr, UnsafePointer(to=event))
-)
-```
 
-Event names are CPU-specific — what exists on an M4 may not exist on an M1,
-and there's no public list of them. If you're not sure of the exact
-spelling, dump every event's name/alias/description first;
-`examples/apple/ffi/kperf_data.mojo` does exactly that.
-
-## Building a config
-
-A config is a builder you add named events to:
-
-```mojo
-var cfg = kperf_data.KPEPConfig.MutPointerType.unsafe_dangling()
-assert_success(kperf_data.kpep_config_create(db, UnsafePointer(to=cfg)))
-
-assert_success(kperf_data.kpep_config_force_counters(cfg))
-
-for name in event_names:
-    var ev = find_event(db, name)
-    assert_success(
-        kperf_data.kpep_config_add_event(cfg, UnsafePointer(to=ev), 1, no_err)
+def main() raises:
+    var sampler = Sampler()
+    var thread = sampler.thread(
+        [PortableEvent.Cycles, PortableEvent.Instructions]
     )
+
+    thread.start()
+
+    var before = thread.sample()
+
+    var result = 0
+    for i in range(100):
+        result = black_box(result + i)
+
+    var after = thread.sample()
+    thread.stop()
+
+    for i in range(thread.event_count()):
+        print(thread.event_names()[i], after[i] - before[i])
 ```
 
-`kpep_config_force_counters` **must** be called before the first
-`kpep_config_add_event` on Apple Silicon. The configurable PMC registers are
-normally owned and driven by `powerd` for its own power/thermal management;
-calling this flags the config so the register values it produces later
-assume you're going to forcibly take those registers away from `powerd`
-(next section). Skip it, and `kpep_config_add_event` fails with
-`KPEP_CONFIG_ERROR_COUNTERS_NOT_FORCED` (error 13).
+`Sampler` opens the event database, acquires the counters from `powerd`, and
+restores the previous force-counter state when released or destroyed.
 
-Each `kpep_config_add_event` call claims one hardware counter slot for that
-event. The third argument (`flag`) is `0` to count in all CPU modes or `1`
-for user-space only — more on why that matters in the appendix.
+`ThreadSampler` programs the selected counters, starts global and per-thread
+counting, reads raw KPC values, and returns values in the same order as the
+events you requested.
 
-## Resolving classes and registers
+## What The Framework Does
 
-Once your events are added, ask the config what it actually needs:
+Each Apple Silicon CPU core has a performance monitoring unit, or PMU. The PMU
+counts occurrences of hardware events related to performance: cycles,
+instructions, cache misses, branches, stalls, and similar microarchitectural
+activity.
+
+The PMU exposes physical counter registers. Each counter register stores a
+number: how many times its selected event has occurred.
+
+Some counter registers are fixed. A fixed counter always counts one event. On
+Apple Silicon, `FIXED_CYCLES` and `FIXED_INSTRUCTIONS` are fixed counters, so
+there is no event selector to program for them.
+
+Other counter registers are configurable. A configurable counter can count one
+event chosen from the PMU's supported event list, such as `L1D_CACHE_MISS_LD`
+or `CORE_ACTIVE_CYCLE`.
+
+Because configurable counters need to know what to count, each configurable
+counter has a corresponding configuration register. In KPC these are the
+`KPCConfig` values. A config register encodes the event selector and count mode,
+for example whether the event should count userspace only or all modes.
+
+The important distinction is:
+
+- Counter register: the value being counted.
+- Config register: the program that tells a configurable counter what to count.
+
+Apple exposes this through two private layers:
+
+- KPC, the low-level API for counter classes, KPC config registers, global
+  counting, per-thread counting, and raw counter reads.
+- kpep, the event database layer that maps names such as `FIXED_CYCLES` to the
+  raw KPC config words for the current CPU.
+
+Professor uses kpep to build a configuration, then uses KPC to program and read
+the counters.
+
+## The Safe API
+
+Most code should start with `professor.apple.Sampler`.
 
 ```mojo
-var classes: UInt32 = 0
-assert_success(kperf_data.kpep_config_kpc_classes(cfg, UnsafePointer(to=classes)))
+var sampler = Sampler()
+var thread = sampler.thread([PortableEvent.Cycles, PortableEvent.Instructions])
 ```
 
-`classes` is the union of every `KPC_CLASS_*_MASK` your chosen events pulled
-in — fixed events (`FIXED_CYCLES`, `FIXED_INSTRUCTIONS`) pull in
-`KPC_CLASS_FIXED_MASK`, general PMU events pull in
-`KPC_CLASS_CONFIGURABLE_MASK`. You don't track this by hand; kpep built it up
-as you called `kpep_config_add_event`.
+`Sampler` owns the kpep database and resolves `PortableEvent` values for the
+current CPU.
 
-Next, get the actual register contents kpep computed for you:
+It also force-acquires the configurable PMCs from `powerd`. Apple normally lets
+`powerd` use those counters for power and thermal management, so measuring PMU
+events requires taking temporary ownership.
+
+Use `ThreadSampler` to measure the current thread:
 
 ```mojo
-var kpc_count: c_size_t = 0
-assert_success(kperf_data.kpep_config_kpc_count(cfg, UnsafePointer(to=kpc_count)))
+thread.start()
+var before = thread.sample()
+var value = work_to_measure()
+var after = thread.sample()
+thread.stop()
+```
 
-var kpc_config_buf = alloc(Layout[kperf.KPCConfig](count=Int(kpc_count))).unsafe_leak()
-assert_success(
-    kperf_data.kpep_config_kpc(cfg, kpc_config_buf, kpc_count * UInt(size_of[kperf.KPCConfig]()))
+The returned lists are in event order, not raw hardware-slot order. If you ask
+for `[Cycles, Instructions]`, index `0` is cycles and index `1` is
+instructions.
+
+Keep the measured window small. Printing, allocation, formatting, and logging
+inside the window are part of the measurement.
+
+## Choosing Events
+
+Use `PortableEvent` when you want an event available across supported Apple
+Silicon generations:
+
+```mojo
+PortableEvent.Cycles
+PortableEvent.Instructions
+PortableEvent.L1DCacheMissLd
+PortableEvent.CoreActiveCycle
+```
+
+Portable events store the kpep event name and are resolved against the runtime
+database.
+
+CPU-specific event sets are also exposed through `AppleEvent`, `M1Event`,
+`M2Event`, `M3Event`, `M4Event`, and `M5Event`.
+
+If an event is not available for the current CPU, event lookup raises instead of
+passing an unchecked string to the C API.
+
+To inspect what the current machine exposes, use:
+
+```sh
+sudo pixi run mojo -I src examples/apple/ffi/kperf_data.mojo
+```
+
+## Lower-Level Safe Configuration
+
+Use `Database` and `ConfigBuilder` when you need to inspect or build a
+configuration yourself.
+
+```mojo
+from professor.apple import Database, ConfigBuilder, PortableEvent
+
+
+var db = Database()
+var cfg = ConfigBuilder(db)
+
+cfg.force_counters()
+cfg.add_event(db.get_event(PortableEvent.Cycles))
+cfg.add_event(db.get_event(PortableEvent.Instructions))
+
+var configuration = cfg.build()
+```
+
+`Database` owns the kpep database handle. `ConfigBuilder` is tied to that
+database lifetime because Apple's config object stores pointers into it.
+
+`cfg.force_counters()` must run before the first `add_event()` on Apple
+Silicon. Without it, kpep rejects configurable-counter events with a
+counter-not-forced error.
+
+`build()` copies the runtime data into an owned `Configuration`:
+
+- `classes`: the KPC classes that must be enabled.
+- `registers`: raw KPC config words produced by kpep.
+- `counter_map`: event index to hardware counter slot.
+- `event_names`: configured event names in request order.
+- `hardware_counter_count`: raw values needed for each KPC read.
+
+This is the data `ThreadSampler` uses internally.
+
+## Count Modes
+
+`ConfigBuilder.add_event()` defaults to userspace-only counting:
+
+```mojo
+cfg.add_event(db.get_event(PortableEvent.Instructions))
+```
+
+Pass `CountMode.AllModes` to include kernel and system execution attributed to
+the thread:
+
+```mojo
+from professor.apple import CountMode
+
+cfg.add_event(
+    db.get_event(PortableEvent.Instructions),
+    mode=CountMode.AllModes,
 )
 ```
 
-`KPCConfig` is just `UInt64` — one hardware config register's worth of
-selector bits, in a bit layout Apple doesn't publish. `kpep_config_kpc_count`
-is **not** the number of events you added; it's the total config-register
-footprint of every _active class_. On an M4, `FIXED` needs zero config
-registers (the fixed counters always measure the same thing — there's
-nothing to select), while `CONFIGURABLE` reports its full slot count
-regardless of how many you're actually using. With 2 fixed + 3 configurable
-events added, `kpc_count` comes out as `8`: the first 3 configurable slots
-hold real selector values, the remaining 5 are zeroed ("select nothing").
+Userspace-only mode filters which instructions count. It does not prevent the
+thread from being interrupted or scheduled away.
 
-## Acquiring and programming the hardware
+For short measurements, take several samples and use the minimum. That is often
+the sample least disturbed by scheduler and system activity.
 
-```mojo
-assert_success(kperf.kpc_force_all_ctrs_set(1))
-assert_success(kperf.kpc_set_config(classes, kpc_config_buf))
+## Internals: KPC Classes
+
+KPC groups physical PMU registers into classes. The important Apple Silicon
+classes are:
+
+- `Classes.Fixed`: fixed counters such as cycles and instructions.
+- `Classes.Configurable`: PMU counters programmed for selected events.
+
+kpep computes the required class mask for the events you add. You should not
+track this by hand.
+
+Fixed counters may need no KPC config-register entries, because their event is
+already fixed. They still need their class enabled when counting starts. A fixed
+counter can read as zero forever if the fixed class is not globally enabled.
+
+Configurable counters do need KPC config-register entries. Those entries are not
+the measurements; they are the hardware programming words that tell each
+configurable counter which event and mode to count.
+
+## Internals: Programming And Reading
+
+The raw KPC sequence is:
+
+```text
+kpc_force_all_ctrs_set(1)
+kpc_set_config(classes, registers)
+kpc_set_counting(classes)
+kpc_set_thread_counting(classes)
+kpc_get_thread_counters(0, count, buffer)
 ```
 
-`kpc_force_all_ctrs_set(1)` is the other half of the `force_counters` call
-from earlier — it actually takes the configurable counters away from
-`powerd`. Without it, `kpc_set_config` fails.
+`kpc_set_config` writes the KPC config registers for the selected classes.
+Global counting then starts the hardware counters. Per-thread counting tells
+the kernel which globally-running classes to shadow into per-thread storage.
 
-`kpc_set_config(classes, kpc_config_buf)` takes both a mask and a buffer
-because the mask tells the kernel how to slice the buffer: it holds
-`kpc_get_config_count(FIXED)` entries followed by
-`kpc_get_config_count(CONFIGURABLE)` entries, in that order. On this PMU,
-`FIXED`'s region happens to have zero width, so passing `FIXED` in `classes`
-here is actually a no-op for _this specific call_ — there's nothing for it
-to claim in the buffer. It matters a lot in the next step, though.
+The effective per-thread set is:
 
-## Starting counting: global vs. per-thread
-
-KPC has two independent counting switches that both need to be set:
-
-```mojo
-assert_success(kperf.kpc_set_counting(classes))
-assert_success(kperf.kpc_set_thread_counting(classes))
-```
-
-**Global counting** (`kpc_set_counting`) physically starts the hardware
-registers for the given classes ticking, across all CPUs. This is where
-`FIXED` actually matters — unlike `kpc_set_config`, this call doesn't care
-about config-register width, it cares about which counter banks are running
-at all. Leave `FIXED` out here and `FIXED_CYCLES`/`FIXED_INSTRUCTIONS` will
-read back `0` forever, no matter what you passed to `kpc_set_config`.
-
-**Per-thread counting** (`kpc_set_thread_counting`) controls which of those
-_globally running_ classes the kernel shadows into per-thread storage — the
-storage `kpc_get_thread_counters` reads. It's a filter on top of the global
-state, not an independent switch: a class must be enabled in both for
-per-thread reads to be meaningful. The effective set is the intersection:
-
-```
+```text
 effective = global_counting & thread_counting
 ```
 
-For example, if global counting is `CONFIGURABLE` and thread counting is
-`FIXED | CONFIGURABLE`, only `CONFIGURABLE` counters accumulate per-thread,
-because the `FIXED` hardware was never started globally.
+`kpc_get_thread_counters` returns raw hardware slots, not event-order values.
+Professor's `Configuration.counter_map` translates those slots back to the
+event order you requested.
 
-The kernel's counting state persists across process lifetimes until reset
-(`kperf_reset`) or reboot — it isn't scoped to your process.
+## Cleanup
 
-### Typical setup sequence
-
-```
-kpc_set_config(classes, config)      # program what each counter measures
-kpc_force_all_ctrs_set(1)            # acquire the registers from powerd
-kpc_set_counting(classes)            # start hardware counters globally
-kpc_set_thread_counting(classes)     # enable per-thread accumulation
-// ... workload ...
-kpc_get_thread_counters(0, n, buf)   # read per-thread values
-```
-
-## Reading counters
-
-`kpc_get_thread_counters` doesn't return one value per event — it returns
-one `UInt64` per _absolute hardware slot_ (all `FIXED` slots, then all
-`CONFIGURABLE` slots), regardless of which ones you actually populated. You
-need the event-to-slot mapping to make sense of it:
+For the high-level API:
 
 ```mojo
-var slot_map = alloc(Layout[c_size_t](count=Int(events_count))).unsafe_leak()
-assert_success(
-    kperf_data.kpep_config_kpc_map(cfg, slot_map, events_count * UInt(size_of[c_size_t]()))
-)
-
-var counter_count = kperf.kpc_get_counter_count(classes)
-var before = alloc(Layout[UInt64](count=Int(counter_count))).unsafe_leak()
-var after = alloc(Layout[UInt64](count=Int(counter_count))).unsafe_leak()
-
-assert_success(kperf.kpc_get_thread_counters(0, UInt32(counter_count), before))
-var result = function_to_measure()
-assert_success(kperf.kpc_get_thread_counters(0, UInt32(counter_count), after))
+thread.stop()
+sampler.release()
 ```
 
-`slot_map[i]` gives the absolute slot that event `i` landed in, so
-`after[slot_map[i]] - before[slot_map[i]]` is that event's delta over the
-call to `function_to_measure`.
+`ThreadSampler.stop()` disables per-thread counting for the current thread.
 
-Keep the bracketed region to _only_ the code you actually want measured.
-`function_to_measure` returns its result instead of printing it, and the
-`print` happens after the `after` snapshot — deliberately. Anything you do
-inside the window, including logging, gets counted as part of your
-measurement. See the appendix for what that costs you in practice.
+`Sampler.release()` restores the previous force-counter state. The destructor
+also restores it if you forget, but explicit release is clearer in long-running
+programs.
 
-## Tearing down
+The safe API does not clear global counting in its destructor. Global counting
+is shared kernel state, and clearing it could break another sampler or profiler.
+
+## FFI Layer
+
+The direct bindings live under `src/professor/apple/ffi/`:
+
+- `kperf.mojo` binds KPC and kperf functions.
+- `kperf_data.mojo` binds kpep database and configuration functions.
+
+The FFI layer resolves private framework symbols at runtime with `dlopen` and
+`dlsym` instead of linking against private SDK symbols. The bindings are based
+on reverse-engineered private interfaces, so struct layouts and function
+behavior must be treated as unstable.
+
+Use the FFI examples only when debugging the wrapper or exploring Apple's raw
+interfaces:
+
+```sh
+sudo pixi run mojo -I src examples/apple/ffi/measure.mojo
+sudo pixi run mojo -I src examples/apple/ffi/kperf_data.mojo
+```
+
+For normal measurement code, prefer `Sampler` and `ThreadSampler`.
+
+## Measurement Noise
+
+Anything inside the before/after window gets counted. This includes string
+formatting, printing, allocation, and syscall setup.
+
+This version measures only the work:
 
 ```mojo
-assert_success(kperf.kpc_set_thread_counting(0))
-assert_success(kperf.kpc_set_counting(0))
-assert_success(kperf.kpc_force_all_ctrs_set(0))
-kperf_data.kpep_config_free(cfg)
-kperf_data.kpep_db_free(db)
+var before = thread.sample()
+var value = work_to_measure()
+var after = thread.sample()
+print(value)
 ```
 
-Stop per-thread accumulation, stop global counting, then release the forced
-counters back to `powerd`. Leaving classes "on" keeps the PMCs running (and
-withheld from `powerd`) for the rest of the process's life.
-
-## Appendix: chasing down measurement noise
-
-The first version of `function_to_measure` printed its result before
-returning:
+This version measures the print too:
 
 ```mojo
-def function_to_measure():
-    var total: UInt64 = 0
-    for i in range(1_000_000):
-        total += UInt64(i)
-    print("result:", total)
+var before = thread.sample()
+var value = work_to_measure()
+print(value)
+var after = thread.sample()
 ```
 
-Since `print` ran _inside_ the `before`/`after` window, every run's
-`FIXED_INSTRUCTIONS`/`FIXED_CYCLES` included whatever it cost to format that
-string and `write(2)` it to the terminal — and that cost isn't fixed. Three
-consecutive runs gave instruction counts of 23322, 23433, and 23490: a
-~170-instruction spread from one run to the next, on code that should do the
-exact same thing every time.
-
-The first attempted fix was switching `kpep_config_add_event`'s `flag` from
-`0` (count in all CPU modes) to `1` (user-space only). It didn't help. The
-reason: `flag=1` only excludes _kernel-mode_ instructions — interrupts, page
-faults, the kernel side of a syscall. It does nothing about the _user-mode_
-work `print` still does before it ever traps into the kernel: formatting the
-string, a heap allocation for it (which can take a faster or slower path
-depending on allocator/heap state), and the libSystem syscall trampoline
-itself. All of that stayed inside the window.
-
-The actual fix was moving `print` out of the measured region entirely —
-`function_to_measure` returns the value, and the caller prints it after the
-`after` snapshot, as shown above. That dropped the counts from the
-~23,000s/~24,000s down to ~12,000s/~4,800s — confirming that most of the
-original variance, and a good chunk of the absolute count, was the
-measurement harness's own overhead, not the loop being measured.
-
-Even with `print` out of the way, expect a few percent of run-to-run jitter
-to remain. `flag=1` filters _which instructions count_, not _whether your
-thread can be interrupted_ — a scheduler tick or context switch landing
-mid-loop can still perturb a region this short. If you need tighter numbers,
-take several samples and use the minimum rather than the average: standard
-microbenchmarking practice, since the minimum is the sample least disturbed
-by other system activity.
+The difference can be large for short regions. Keep the window narrow, avoid
+I/O inside it, and sample repeatedly.

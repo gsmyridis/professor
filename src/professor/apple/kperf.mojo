@@ -131,11 +131,9 @@ def get_cpu_counters(
 
 
 @always_inline
-def get_thread_counters(
-    tid: UInt32,
-    buf_count: UInt32,
-    buf: UnsafePointer[UInt64, MutUntrackedOrigin],
-) raises:
+def get_thread_counters[
+    origin: MutOrigin, //
+](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin],) raises:
     """Gets counter accumulations for the current thread.
 
     Args:

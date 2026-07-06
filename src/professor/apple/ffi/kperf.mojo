@@ -340,7 +340,7 @@ def kpc_get_cpu_counters[
 @always_inline
 def kpc_get_thread_counters[
     origin: MutOrigin, //
-](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin],) -> c_int:
+](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin]) -> c_int:
     """Gets counter accumulations for the current thread.
 
     Reads `kpc.thread_counters` via `sysctl`.

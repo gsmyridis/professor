@@ -7,6 +7,7 @@ from .ffi.kperf import (
     kpc_pmu_version,
 )
 
+
 @fieldwise_init
 struct Version(
     RegisterPassable,

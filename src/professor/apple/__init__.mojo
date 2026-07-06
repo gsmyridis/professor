@@ -1,5 +1,5 @@
 from .classes import Classes
-from .config import ConfigBuilder, Configuration
+from .config import ConfigBuilder, Configuration, CountMode
 from .cpu import Cpu, Architecture
 from .database import Database
 from .event import (

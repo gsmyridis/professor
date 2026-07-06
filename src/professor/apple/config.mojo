@@ -4,7 +4,7 @@ from std.sys import size_of
 from .ffi.kperf_data import (
     KPEPConfig,
     KPEPEvent,
-    KPCConfig as _KPCConfig,
+    KPCConfig,
     kpep_config_create,
     kpep_config_free,
     kpep_config_add_event,
@@ -23,33 +23,85 @@ from .event import EventDescriptor
 from .classes import Classes
 from .kperf import get_counter_count
 
-# ===-----------------------------------------------------------------------====
-# Configuration
-# ===-----------------------------------------------------------------------====
+# ===-----------------------------------------------------------------------===
+# KPC Configuration
+# ===-----------------------------------------------------------------------===
 
-comptime KPCConfig = _KPCConfig
-# TODO: add description
+comptime CounterConfig = KPCConfig
+"""A raw KPC counter configuration word.
+
+This is the `UInt64` value produced by `kperfdata` and passed to
+`kpc_set_config`. It programs hardware counter configuration registers; it is
+not a counter value read back from the PMU.
+"""
+
 # TODO: Use error descriptions from ffi when raising
 
+# ===-----------------------------------------------------------------------===
+# Count mode
+# ===-----------------------------------------------------------------------===
+
+
+struct CountMode(RegisterPassable):
+    """Controls which execution modes contribute to an event's count.
+
+    This flag is passed while adding an event to a `ConfigBuilder`. It affects
+    how `kperfdata` computes the counter configuration words for that event.
+    """
+
+    comptime AllModes = Self(unsafe_flag=0)
+    """Counts event in all modes e.g. userspace, kernel, etc."""
+
+    comptime Userspace = Self(unsafe_flag=1)
+    """Counts event only for userspace code."""
+
+    var _flag: UInt32
+
+    def __init__(out self, *, unsafe_flag: UInt32):
+        self._flag = unsafe_flag
+
+
+# ===-----------------------------------------------------------------------===
+# KPEP Configuration
+# ===-----------------------------------------------------------------------===
 
 struct Configuration(Movable):
-    """Owned KPC configuration produced from a temporary kpep builder.
+    """Owned runtime plan for programming and reading KPC counters.
 
-    Sampling only needs these copied values. It does not need the kpep database
-    or config handle that computed them.
+    This is the safe-layer snapshot produced from a temporary `ConfigBuilder`.
+    It contains only the copied values needed by samplers: the active counter
+    classes, raw counter configuration words, the mapping from requested events
+    to hardware counter slots, event names, and the number of raw counter values
+    to read.
+
+    It deliberately does not own a `KPEPConfig` or `Database`; those are only
+    needed while translating human-readable events into KPC data.
     """
 
     var classes: Classes
-    var registers: List[KPCConfig]
+    """Counter classes that must be enabled for this configuration."""
+
+    var registers: List[CounterConfig]
+    """Raw KPC counter configuration words passed to `kpc_set_config`."""
+
     var counter_map: List[Int]
+    """Maps event order to hardware counter slot indices.
+
+    Samplers read raw counter values in hardware slot order, then use this map
+    to return values in the same order as the events added to the builder.
+    """
+
     var event_names: List[String]
+    """Names of the configured events, in event order."""
+
     var hardware_counter_count: Int
+    """Number of raw hardware counter values the sampler must read."""
 
     def __init__(
         out self,
         *,
         var classes: Classes,
-        var registers: List[KPCConfig],
+        var registers: List[CounterConfig],
         var counter_map: List[Int],
         var event_names: List[String],
         hardware_counter_count: Int,
@@ -67,12 +119,16 @@ struct Configuration(Movable):
 
 
 struct ConfigBuilder[origin: ImmutOrigin](Movable):
-    """A mutable KPC configuration builder.
+    """Mutable KPEP-backed builder for a runtime `Configuration`.
 
-    Owns a `kpep_config` handle created by `kpep_config_create` and frees it
-    via `kpep_config_free` on destruction. `origin` ties a `Config`'s
-    lifetime to the `Database` it was built from, since the underlying
-    `kpep_config` keeps a pointer back into that database.
+    This struct owns a `KPEPConfig` handle created by `kpep_config_create`.
+    The handle belongs to Apple's `kperfdata` layer and translates database
+    event descriptors into KPC counter classes, counter configuration words,
+    and event-to-counter-slot mappings.
+
+    `origin` ties the builder's lifetime to the `Database` it was built from,
+    because the underlying `KPEPConfig` stores pointers into that database.
+    Call `build()` to copy out the runtime values and discard the KPEP handle.
     """
 
     comptime _UnsafePointerType = UnsafePointer[KPEPConfig, MutUntrackedOrigin]
@@ -96,8 +152,16 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
     # Event methods
     # ===--------------------------------------------------------------------===
 
-    def add_event(mut self, var event: EventDescriptor[Self.origin]) raises:
-        """Adds an event to this configuration, counting in all modes.
+    def add_event(
+        mut self,
+        var event: EventDescriptor[Self.origin],
+        *,
+        mode: CountMode = CountMode.Userspace,
+    ) raises:
+        """Adds an event to this configuration.
+
+        Defaults to userspace-only counting. Pass `CountMode.AllModes` to count
+        both userspace and kernel/system execution attributed to the thread.
 
         Raises:
             If the event could not be added (e.g. conflicts with one already
@@ -108,7 +172,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
             kpep_config_add_event(
                 self._ptr,
                 UnsafePointer(to=event._ptr),
-                0,
+                mode._flag,
                 UnsafePointer(to=err),
             )
             != 0
@@ -184,14 +248,14 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
 
         return Int(count)
 
-    def counters(self) raises -> List[KPCConfig]:
-        """Gets KPC register configuration values."""
+    def counters(self) raises -> List[CounterConfig]:
+        """Gets the raw KPC counter configuration words."""
         var count = self.counter_count()
-        var buf = List[KPCConfig](length=count, fill=0)
+        var buf = List[CounterConfig](length=count, fill=0)
         var res = kpep_config_kpc(
             self._ptr,
             buf.unsafe_ptr(),
-            c_size_t(count * size_of[KPCConfig]()),
+            c_size_t(count * size_of[CounterConfig]()),
         )
         if res != 0:
             var error_msg = kpep_config_error_desc(res)
@@ -210,7 +274,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
         if res != 0:
             raise Error("failed to read active KPC counter classes")
 
-        return Classes(classes)
+        return Classes(unsafe_mask=classes)
 
     def counter_map(self) raises -> List[Int]:
         """Returns the event index to hardware counter slot mapping."""
@@ -247,7 +311,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
         for event in events:
             event_names.append(String(event.name()))
 
-        var hardware_counter_count = Int(get_counter_count(classes._inner))
+        var hardware_counter_count = Int(get_counter_count(classes.value()))
         return Configuration(
             classes=classes^,
             registers=registers^,

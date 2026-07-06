@@ -99,7 +99,6 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
         else:
             self.write_repr_to(writer)
 
-
     @always_inline
     def id(self) -> String:
         """Returns the current CPU identification string.
@@ -134,7 +133,6 @@ struct Architecture(
     RegisterPassable,
     Writable,
 ):
-
     # ===--------------------------------------------------------------------===
     # Aliases
     # ===--------------------------------------------------------------------===

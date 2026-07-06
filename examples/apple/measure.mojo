@@ -2,9 +2,9 @@ from professor.apple import Database, ConfigBuilder, PortableEvent, Version
 from std.testing import assert_equal
 
 
-def function_to_measure() -> UInt64:
+def function_to_measure(n: Int) -> UInt64:
     var total: UInt64 = 0
-    for i in range(1_000_000):
+    for i in range(n):
         total += UInt64(i)
     return total
 
@@ -40,10 +40,10 @@ def measure_function() raises:
     #    counters, this starts failing once the slots run out.
     # ===--------------------------------------------------------------===
     var events = [
-        PortableEvent.FixedCycles,
         PortableEvent.FixedInstructions,
-        PortableEvent.CoreActiveCycle,
+        PortableEvent.FixedCycles,
         PortableEvent.L1DCacheMissLd,
+        PortableEvent.CoreActiveCycle,
     ]
     for ev in events:
         var ev_desc = db.get_event(ev)
@@ -69,6 +69,9 @@ def measure_function() raises:
     assert_equal(kpc_count, len(counters))
     for i in range(kpc_count):
         print(t"KPC_CONFIG[{i}]", counters[i])
+
+    var counter_map = cfg.counter_map()
+    print(counter_map)
 
     # # ===--------------------------------------------------------------===
     # # 7. Take ownership of the configurable counters from powerd - required
