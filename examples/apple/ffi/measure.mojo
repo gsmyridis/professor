@@ -1,4 +1,5 @@
 from std.ffi import c_int, c_size_t
+from std.benchmark import black_box
 from std.memory import OptionalUnsafePointer, alloc, Layout
 from std.sys.info import size_of
 
@@ -30,10 +31,10 @@ def find_event(
     return event.value()
 
 
-def function_to_measure() -> UInt64:
+def function_to_measure(n: Int) -> UInt64:
     var total: UInt64 = 0
-    for i in range(1_000_000):
-        total += UInt64(i)
+    for i in range(n):
+        total = black_box(total + UInt64(black_box(i)))
     return total
 
 
@@ -167,14 +168,19 @@ def measure_function() raises:
     #     per-thread counters, so the delta isolates exactly what happened
     #     between the two reads.
     # ===--------------------------------------------------------------===
+    var n = black_box(1_000_000)
     assert_success(
         kperf.kpc_get_thread_counters(0, UInt32(counter_count), before)
     )
-    var result = function_to_measure()
+    var result = black_box(function_to_measure(n))
+    var result2 = black_box(function_to_measure(n))
+    var result3 = black_box(function_to_measure(n))
     assert_success(
         kperf.kpc_get_thread_counters(0, UInt32(counter_count), after)
     )
     print("result:", result)
+    print("result:", result2)
+    print("result:", result3)
 
     # ===--------------------------------------------------------------===
     # 12. Report deltas per event, using slot_map[i] to find event i's slot.

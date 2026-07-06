@@ -70,6 +70,11 @@ def test_database_event_count_matches_alias_count_sanity() raises:
     assert_true(db.alias_count() >= 0)
 
 
+def test_database_aliases_length_matches_alias_count() raises:
+    var db = Database()
+    assert_equal(len(db.aliases()), db.alias_count())
+
+
 def test_database_events_length_matches_event_count() raises:
     var db = Database()
     var events = db.events()

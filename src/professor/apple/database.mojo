@@ -1,4 +1,5 @@
-from std.ffi import c_size_t, c_char
+from std.ffi import c_size_t, c_char, CStringSlice
+from std.sys import size_of
 
 from .ffi.kperf_data import (
     KPEPDb,
@@ -31,24 +32,31 @@ struct Database(Movable):
     be freed exactly once.
     """
 
-    var _ptr: UnsafePointer[KPEPDb, MutUntrackedOrigin]
+    comptime UnsafePointerType = UnsafePointer[KPEPDb, MutUntrackedOrigin]
+
+    var _ptr: Self.UnsafePointerType
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self) raises:
-        # SAFETY: `ptr` is scratch storage for the C "out parameter" below.
-        # It is never read before `kpep_db_create` writes the real address
-        # into it, and we only commit it to `self._ptr` after checking the
-        # call succeeded.
-        var ptr = UnsafePointer[KPEPDb, MutUntrackedOrigin].unsafe_dangling()
+        var ptr = Self.UnsafePointerType.unsafe_dangling()
         if kpep_db_create({}, UnsafePointer(to=ptr)) != 0:
             raise Error("failed to create database")
-        self._ptr = ptr
+
+        return self.__init__(unsafe_ptr=ptr)
+
+    @always_inline
+    def __init__(out self, *, unsafe_ptr: Self.UnsafePointerType):
+        self._ptr = unsafe_ptr
 
     def __del__(deinit self):
         kpep_db_free(self._ptr)
+
+    @always_inline
+    def unsafe_ptr(self) -> Self.UnsafePointerType:
+        return self._ptr
 
     # ===--------------------------------------------------------------------===
     # Database information methods
@@ -114,7 +122,7 @@ struct Database(Movable):
         var res = kpep_db_aliases(
             self._ptr,
             buf.unsafe_ptr(),
-            c_size_t(count),
+            c_size_t(count * size_of[ConstCStringPointer]()),
         )
 
         if res != 0:
@@ -160,18 +168,18 @@ struct Database(Movable):
         var result = List[EventDescriptor[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):
-            result.append(EventDescriptor[origin_of(self)](base + i))
+            result.append(EventDescriptor[origin_of(self)](unsafe_ptr=base + i))
         return result^
 
     def get_event[
-        origin: Origin
-    ](self, *, name: StringSlice[origin]) raises -> EventDescriptor[
+        origin: ImmutOrigin
+    ](self, *, unsafe_name: CStringSlice[origin]) raises -> EventDescriptor[
         origin_of(self)
     ]:
-        """Looks up an event by its name.
+        """Looks up an event by a null-terminated name or alias.
 
         Args:
-            name: Name of the event.
+            unsafe_name: Null-terminated event name or alias.
 
         Returns:
             The event.
@@ -182,14 +190,14 @@ struct Database(Movable):
         var ev: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
         var res = kpep_db_event(
             self._ptr,
-            name.unsafe_ptr().bitcast[c_char](),
+            unsafe_name.unsafe_ptr().bitcast[c_char](),
             UnsafePointer(to=ev),
         )
         if res != 0:
-            raise Error("event not found: " + String(name))
+            raise Error("event not found: " + String(unsafe_name))
         if not ev:
-            raise Error("event lookup returned null: " + String(name))
-        return EventDescriptor[origin_of(self)](ev.value())
+            raise Error("event lookup returned null: " + String(unsafe_name))
+        return EventDescriptor[origin_of(self)](unsafe_ptr=ev.value())
 
     def get_event(
         self, event: Some[Event]
@@ -206,7 +214,7 @@ struct Database(Movable):
             If `event` is not contained in this database (e.g. it belongs
             to a different Apple Silicon generation).
         """
-        return self.get_event(name=event.name())
+        return self.get_event(unsafe_name=event.name().as_c_string_slice())
 
     # ===--------------------------------------------------------------------===
     # Counter methods
@@ -216,7 +224,7 @@ struct Database(Movable):
         """Gets the number of counters for a class mask.
 
         Args:
-            classes: a class mask.
+            classes: A class mask.
 
         Rerutns:
             The number of counters for the specified classes.
@@ -224,7 +232,7 @@ struct Database(Movable):
         var count: c_size_t = 0
         var res = kpep_db_counters_count(
             self._ptr,
-            UInt8(classes._inner),
+            UInt8(classes.value()),
             UnsafePointer(to=count),
         )
         if res != 0:

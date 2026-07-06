@@ -1,101 +1,6 @@
 from .ffi import kperf as ffi_kperf
+from .ffi.kperf import KPCConfig
 from std.ffi import c_char, c_int, c_size_t
-
-# ===-----------------------------------------------------------------------===#
-# KPC Class
-# ===-----------------------------------------------------------------------===#
-
-
-# TODO: Add bitwise-and and bitwise-or
-# TODO: Add write_to, not repr
-@fieldwise_init
-struct KPCClass(
-    Equatable,
-    RegisterPassable,
-    Writable,
-):
-    comptime Fixed = Self(ffi_kperf.KPC_CLASS_FIXED_MASK)
-    comptime Configurable = Self(ffi_kperf.KPC_CLASS_CONFIGURABLE_MASK)
-    comptime Power = Self(ffi_kperf.KPC_CLASS_POWER_MASK)
-    comptime RawPMU = Self(ffi_kperf.KPC_CLASS_RAWPMU_MASK)
-
-    var _value: UInt32
-
-
-# ===-----------------------------------------------------------------------===#
-# KPC Config
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct KPCConfig(RegisterPassable):
-    var value: UnsafePointer[ffi_kperf.KPCConfig, MutUntrackedOrigin]
-
-
-# ===-----------------------------------------------------------------------===#
-# PMU version enum
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct KPCPMUVersion(
-    RegisterPassable,
-    Writable,
-):
-    var _value: UInt32
-
-    comptime Error = Self(ffi_kperf.KPC_PMU_ERROR)
-    comptime IntelV3 = Self(ffi_kperf.KPC_PMU_INTEL_V3)
-    comptime ArmApple = Self(ffi_kperf.KPC_PMU_ARM_APPLE)
-    comptime IntelV2 = Self(ffi_kperf.KPC_PMU_INTEL_V2)
-    comptime ArmV2 = Self(ffi_kperf.KPC_PMU_ARM_V2)
-
-    def write_to(self, mut writer: Some[Writer]):
-        if self._value == ffi_kperf.KPC_PMU_ERROR:
-            writer.write("Error")
-        elif self._value == ffi_kperf.KPC_PMU_INTEL_V3:
-            writer.write("IntelV3")
-        elif self._value == ffi_kperf.KPC_PMU_ARM_APPLE:
-            writer.write("ArmApple")
-        elif self._value == ffi_kperf.KPC_PMU_INTEL_V2:
-            writer.write("IntelV2")
-        elif self._value == ffi_kperf.KPC_PMU_ARM_V2:
-            writer.write("ArmV2")
-        else:
-            writer.write(t"Unknown: {self._value}")
-
-
-@always_inline
-def pmu_version() -> KPCPMUVersion:
-    """Gets the version of KPC that is running.
-
-    Returns:
-        The KPC version.
-    """
-    return KPCPMUVersion(ffi_kperf.kpc_pmu_version())
-
-
-@always_inline
-def cpu_string() -> String:
-    """Returns the current CPU identification string.
-
-    This function does not require root privileges.
-
-    Returns:
-        The current CPU identification string.
-    """
-    # 64 bytes is assumed to be enough.
-    # InlineArray means string does not require allocation.
-    var buf = InlineArray[UInt8, 64](fill=0)
-    var n = ffi_kperf.kpc_cpu_string(
-        buf.unsafe_ptr().bitcast[c_char](), c_size_t(len(buf))
-    )
-    if n < 0:
-        return String()
-
-    # SAFETY: It is assumed that the CPU identification
-    # string is ASCII with length lower than 64 bytes.
-    return String(unsafe_from_utf8_ptr=buf.unsafe_ptr())
 
 
 # TODO: classes should be a compbination of enum-like structs
@@ -124,6 +29,19 @@ def get_thread_counting() -> UInt32:
         occurs or no class is set.
     """
     return ffi_kperf.kpc_get_thread_counting()
+
+
+@always_inline
+def set_counting(classes: UInt32) raises:
+    """Sets PMC classes to enable global counting."""
+    if ffi_kperf.kpc_set_counting(classes) != 0:
+        raise Error("failed to set global counting")
+
+
+@always_inline
+def get_counting() -> UInt32:
+    """Gets running PMC classes."""
+    return ffi_kperf.kpc_get_counting()
 
 
 @always_inline
@@ -161,7 +79,7 @@ def get_counter_count(classes: UInt32) -> UInt32:
 
 
 @always_inline
-def set_config(classes: UInt32, mut config: KPCConfig) raises:
+def set_config(classes: UInt32, mut config: List[KPCConfig]) raises:
     """Sets config registers.
 
     `config` should contain at least `get_config_count(classes)` elements.
@@ -170,12 +88,12 @@ def set_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer containing the config register values.
     """
-    if ffi_kperf.kpc_set_config(classes, config.value) != 0:
+    if ffi_kperf.kpc_set_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to set config")
 
 
 @always_inline
-def get_config(classes: UInt32, mut config: KPCConfig) raises:
+def get_config(classes: UInt32, mut config: List[KPCConfig]) raises:
     """Gets config registers.
 
     `config` should have room for at least `get_config_count(classes)`
@@ -185,7 +103,7 @@ def get_config(classes: UInt32, mut config: KPCConfig) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer to receive the config register values.
     """
-    if ffi_kperf.kpc_get_config(classes, config.value) != 0:
+    if ffi_kperf.kpc_get_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to get config")
 
 
@@ -213,11 +131,9 @@ def get_cpu_counters(
 
 
 @always_inline
-def get_thread_counters(
-    tid: UInt32,
-    buf_count: UInt32,
-    buf: UnsafePointer[UInt64, MutUntrackedOrigin],
-) raises:
+def get_thread_counters[
+    origin: MutOrigin, //
+](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin],) raises:
     """Gets counter accumulations for the current thread.
 
     Args:

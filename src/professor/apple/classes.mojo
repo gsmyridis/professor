@@ -6,36 +6,41 @@ from .ffi.kperf import (
 )
 
 
-# TODO: Rethink the classes abstraction
-@fieldwise_init
 struct Classes(Copyable, Equatable, RegisterPassable, Writable):
     # ===--------------------------------------------------------------------===
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime Fixed = Self(KPC_CLASS_FIXED_MASK)
+    comptime Fixed = Self(unsafe_mask=KPC_CLASS_FIXED_MASK)
     """Fixed counters: they always measure the same events."""
 
-    comptime Configurable = Self(KPC_CLASS_CONFIGURABLE_MASK)
+    comptime Configurable = Self(unsafe_mask=KPC_CLASS_CONFIGURABLE_MASK)
     """Counters that can be configured for what events to count."""
 
-    comptime Power = Self(KPC_CLASS_POWER_MASK)
+    comptime Power = Self(unsafe_mask=KPC_CLASS_POWER_MASK)
     """Counters that count power related information."""
 
-    comptime RawPMU = Self(KPC_CLASS_RAWPMU_MASK)
+    comptime RawPMU = Self(unsafe_mask=KPC_CLASS_RAWPMU_MASK)
 
     # ===--------------------------------------------------------------------===
     # Field
     # ===--------------------------------------------------------------------===
 
-    var _inner: UInt32
+    var _mask: UInt32
 
     # ===--------------------------------------------------------------------===
     # Methods
     # ===--------------------------------------------------------------------===
 
+    def __init__(out self, *, unsafe_mask: UInt32):
+        self._mask = unsafe_mask
+
     def __or__(self, other: Self) -> Self:
-        return Self(self._inner & other._inner)
+        return Self(unsafe_mask=self._mask | other._mask)
 
     def __and__(self, other: Self) -> Self:
-        return Self(self._inner & other._inner)
+        return Self(unsafe_mask=self._mask & other._mask)
+
+    def value(self) -> UInt32:
+        """Returns the raw classes mask."""
+        return self._mask
