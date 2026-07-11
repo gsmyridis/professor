@@ -1,19 +1,75 @@
 # Professor
 
-Professor is a Mojo wrapper around Apple Silicon hardware performance
-counters. It lets you measure events such as cycles, retired instructions,
-cache misses, and branch behavior from Mojo code.
+Professor is an instrumentation-based profiling library for Mojo.
 
-The Apple backend uses the same private `kperf`, KPC, and kpep machinery that
+It is meant to help answer two questions: where does your code spend most of
+its time, and why is that time spent there?
+
+Professor exposes performance measurements from the machine underneath your
+program. Depending on the operating system and CPU ISA, those measurements may
+come from hardware performance counters, kernel profiling APIs, architectural
+registers, or timestamp counters.
+
+Each tool has tradeoffs. Some counters are precise but privileged. Some timing
+sources are cheap but explain less. Some APIs are powerful but platform
+specific. Professor wraps those tools in safer Mojo APIs.
+
+The library is also meant to make collection and reporting easy: run a small
+measurement, collect the relevant metrics, and produce a report that points at
+likely bottlenecks and explains the supporting evidence.
+
+## Roadmap
+
+- Apple Silicon/macOS: `kperf`, KPC, and KPEP access to hardware performance
+  counters.
+- Linux: `perf_event_open` and perf events. Not implemented.
+- x86_64: `rdtsc`/`rdtscp` timing support. Not implemented.
+- AArch64: user-readable `*_EL0` counter registers where the OS enables them.
+  Not implemented.
+- Reporting: measurement collection and bottleneck reports. Not implemented.
+- Other operating-system and ISA-specific backends where they are useful.
+
+## Apple kperf Backend
+
+The current backend targets Apple Silicon on macOS. It provides a Mojo wrapper
+around hardware performance counters, including events such as cycles, retired
+instructions, cache misses, and branch behavior.
+
+The Apple backend uses the same private `kperf`, KPC, and KPEP machinery that
 powers Instruments and `xctrace`. Professor adds a safer Mojo layer on top:
 owned handles, typed events, automatic event-to-counter mapping, and per-thread
 sampling helpers.
 
-> Important: this is macOS-only, Apple-Silicon-only, and requires `sudo`.
-> Apple's `kperf.framework` and `kperfdata.framework` are private frameworks:
-> Apple does not publish headers, documentation, or ABI guarantees for them.
-> This project relies on reverse-engineered layouts and behavior. A macOS
-> update can break the bindings or change counter semantics.
+> Important: this backend is macOS-only, Apple-Silicon-only, and requires
+> `sudo`. Apple's `kperf.framework` and `kperfdata.framework` are private
+> frameworks: Apple does not publish headers, documentation, or ABI guarantees
+> for them. This project relies on reverse-engineered layouts and behavior. A
+> macOS update can break the bindings or change counter semantics.
+
+The private frameworks were reverse engineered by other researchers. Add their
+names and links here before treating this document as complete.
+
+## The kperf System
+
+Apple's private kperf system provides access to performance counters and
+profiling events on macOS. It is powerful, but experimental for this project
+because Apple can change the private ABI or event semantics at any time.
+
+Professor uses three related layers:
+
+- KPC, or Kernel Performance Counters, is the low-level counter interface in
+  `kperf.framework`. It discovers counter classes, programs KPC config
+  registers, starts counting, and reads per-thread or per-CPU counter values.
+- KPERF, or Kernel Performance, is the timer and action sampling subsystem in
+  `kperf.framework`. It configures sampler sets, action filters, timer periods,
+  and tick/nanosecond conversion helpers.
+- KPEP is the event database and config-builder layer in
+  `kperfdata.framework`. It loads the per-CPU event database, maps names such
+  as `FIXED_CYCLES` to hardware selectors, and produces KPC config words.
+
+The flow is: KPEP decides which KPC registers and counter slots an event needs;
+KPC programs and reads the counters; Professor owns the handles and translates
+raw hardware slots back into the event order requested by Mojo code.
 
 ## Quick Start
 
