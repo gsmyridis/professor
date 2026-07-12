@@ -1,12 +1,8 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from professor.profile import (
-    Sample,
-    Measurer,
-    Nanos,
-    Profiler,
-    ProfileZone,
-)
+from professor.measure import Sample, Measurer
+from professor.measure.default import Nanos
+from professor.profile import Profiler, ProfileZone
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
@@ -21,6 +17,14 @@ struct Ticker(Measurer):
     def measure(mut self) -> Nanos:
         self.now += 1
         return Nanos(self.now)
+
+
+comptime ResetProf = Profiler[Ticker, "test.registry-reset"]
+
+
+def _run_stable_site():
+    var zone = ResetProf.zone["stable"]()
+    zone^.close()
 
 
 def test_single_zone_inclusive_equals_exclusive() raises:
@@ -120,30 +124,48 @@ def test_deep_lifo_nesting() raises:
     Prof.reset()
 
 
-def test_same_name_aggregates_without_double_count() raises:
-    comptime Prof = Profiler[Ticker, "test.recursion"]
+def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
+    comptime Prof = Profiler[Ticker, "test.same-name-locations"]
     Prof.install(Ticker())
 
-    # Same name at two call sites: one logical site, as in a recursive
-    # function entering its own zone.
+    # Source location is part of site identity, so these are separate anchors.
     var outer = Prof.zone["work"]()  # tick 1
     var inner = Prof.zone["work"]()  # tick 2
     inner^.close()  # tick 3, elapsed 1
     outer^.close()  # tick 4, elapsed 3
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 1)  # one site, entered twice
-    assert_equal(rep.zones[0].count, 2)
-    # Inclusive spans only the outermost entry (3), not outer + inner (4).
-    assert_equal(rep.zones[0].inclusive.value, 3)
-    # All time is inside the site, so exclusive == inclusive.
-    assert_equal(rep.zones[0].exclusive.value, 3)
-    # Per-entry deltas are 1 and 3.
-    assert_equal(rep.zones[0].min.value, 1)
-    assert_equal(rep.zones[0].max.value, 3)
-    assert_equal(rep.zones[0].mean.value, 2)  # (1 + 3) / 2
-    assert_equal(rep.zones[0].variance.value, 1)  # (1 + 9)/2 - 2*2
+    assert_equal(len(rep.zones), 2)
+    var inclusive_sum = 0
+    var exclusive_sum = 0
+    for ref stat in rep.zones:
+        assert_true(stat.name == "work")
+        assert_equal(stat.count, 1)
+        inclusive_sum += stat.inclusive.value
+        exclusive_sum += stat.exclusive.value
+    assert_equal(inclusive_sum, 4)  # outer 3 + inner 1
+    assert_equal(exclusive_sum, 3)  # outer self 2 + inner self 1
     Prof.reset()
+
+
+def test_site_registry_survives_reset() raises:
+    ResetProf.install(Ticker())
+    _run_stable_site()
+    ResetProf.reset()
+
+    _run_stable_site()
+    var rep = ResetProf.report()
+    assert_equal(len(rep.zones), 1)
+    assert_equal(rep.zones[0].count, 1)
+    assert_equal(rep.zones[0].inclusive.value, 1)
+    ResetProf.reset()
+
+    ResetProf.install(Ticker())
+    _run_stable_site()
+    rep = ResetProf.report()
+    assert_equal(len(rep.zones), 1)
+    assert_equal(rep.zones[0].count, 1)
+    ResetProf.reset()
 
 
 def test_report_with_open_zone_raises() raises:
@@ -163,8 +185,8 @@ def test_report_with_open_zone_raises() raises:
     Prof.reset()
 
 
-def test_many_sites_grow_index() raises:
-    # Force slot-table growth past the small install() reservation.
+def test_many_sites_grow_registry() raises:
+    # Force Dict growth past the small install() reservation.
     comptime Prof = Profiler[Ticker, "test.growth"]
     Prof.install(Ticker(), sites=2)
 

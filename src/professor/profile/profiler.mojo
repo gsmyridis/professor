@@ -1,22 +1,15 @@
 from std.ffi import _Global
+from std.collections import Dict
+from std.hashlib import default_comp_time_hasher, Hasher
 from std.os import abort
 from std.reflection import call_location, SourceLocation
-from std.time import perf_counter_ns
 
 from professor.measure import Sample, Measurer
+from .report import Report, ZoneStat
 
 # ===----------------------------------------------------------------------=== #
-# Anchors and site resolution
+# Anchors
 # ===----------------------------------------------------------------------=== #
-
-
-def _fnv1a(s: StaticString) -> UInt64:
-    """FNV-1a over the name bytes. Evaluated at compile time for the comptime
-    zone-name parameter, so the hot path never hashes a string at runtime."""
-    var h: UInt64 = 0xCBF29CE484222325
-    for b in s.as_bytes():
-        h = (h ^ UInt64(Int(b))) * 0x100000001B3
-    return h
 
 
 struct _Anchor[S: Sample](Copyable):
@@ -54,102 +47,81 @@ struct _Anchor[S: Sample](Copyable):
         self.min = Self.S()
         self.max = Self.S()
 
+# ===----------------------------------------------------------------------=== #
+# Call site key
+# ===----------------------------------------------------------------------=== #
+
+@always_inline
+def _site_hash(name_hash: UInt64, loc: SourceLocation) -> UInt64:
+    """Mixes the cheap numeric portion of a source location into a comptime
+    name hash. The file name remains part of the equality check."""
+    var h = (name_hash ^ UInt64(loc.line())) * 0x100000001B3
+    return (h ^ UInt64(loc.column())) * 0x100000001B3
+
 
 @fieldwise_init
-struct _SiteSlot(Copyable):
-    """One open-addressing slot mapping a zone name to its anchor index.
+struct _SiteKey(Copyable, Equatable, Hashable, Movable):
+    """Complete site identity with a cheaply hashable fingerprint."""
 
-    `idx < 0` marks an empty slot. Slots are never deleted individually, so
-    linear probing needs no tombstones.
-    """
-
-    var hash: UInt64
+    var fingerprint: UInt64
     var name: StaticString
-    var idx: Int
+    var file: StaticString
+    var line: Int
+    var column: Int
+
+    @always_inline
+    def __hash__(self, mut hasher: Some[Hasher]):
+        hasher.update(self.fingerprint)
+
+    @always_inline
+    def __eq__(self, other: Self) -> Bool:
+        return (
+            self.fingerprint == other.fingerprint
+            and self.line == other.line
+            and self.column == other.column
+            and _same_static_string(self.name, other.name)
+            and _same_static_string(self.file, other.file)
+        )
+
+
+comptime _SiteDict = Dict[_SiteKey, Int, default_comp_time_hasher]
 
 
 struct _State[M: Measurer](Movable):
     """Process-global profiler state.
 
-    Holds the per-site anchor table, an open-addressed index from zone name to
-    anchor (probed with a compile-time hash), the innermost open anchor
-    (`current_open`, -1 at the root), and a stack of unique zone serials used
-    to enforce LIFO nesting at close time -- anchor indices alone can't tell
-    apart two open zones of the same site.
+    Holds dense per-site anchors, a standard dictionary from site identity to
+    anchor index, the innermost open anchor (`current_open`, -1 at the root),
+    and a nesting depth used to enforce LIFO close order.
     """
 
     comptime SampleType = Self.M.S
 
     var measurer: Optional[Self.M]
     var anchors: List[_Anchor[Self.M.S]]
-    var site_slots: List[_SiteSlot]
-    var open_serials: List[Int]
+    var sites: _SiteDict
     var current_open: Int
-    var next_serial: Int
+    var open_depth: Int
 
     def __init__(out self):
-        self.measurer = None # TODO: Make Measurer Defaultable or thin closure
+        self.measurer = None  # TODO: Make Measurer Defaultable or thin closure
         self.anchors = List[_Anchor[Self.SampleType]]()
-        self.site_slots = List[_SiteSlot]()
-        self.open_serials = List[Int]()
+        self.sites = _SiteDict()
         self.current_open = -1
-        self.next_serial = 0
+        self.open_depth = 0
 
-    @always_inline
-    def _find_site(self, h: UInt64, name: StaticString) -> Int:
-        """Probes for `name`, returning its anchor index or -1.
-
-        The comptime name parameter makes the hash a constant and the pointer
-        comparison almost always sufficient; the content comparison only runs
-        on a pointer mismatch for an equal hash.
+    def _resolve_site(mut self, var key: _SiteKey) -> Int:
+        """Returns the site's dense anchor index, registering it on first use.
         """
-        var cap = len(self.site_slots)
-        if cap == 0:
-            return -1
-        var mask = cap - 1
-        var i = Int(h & UInt64(mask))
-        while True:
-            ref slot = self.site_slots[i]
-            if slot.idx < 0:
-                return -1
-            if slot.hash == h and (
-                slot.name.unsafe_ptr() == name.unsafe_ptr()
-                or slot.name == name
-            ):
-                return slot.idx
-            i = (i + 1) & mask
+        var existing = self.sites.get(key)
+        if existing:
+            return existing.value()
 
-    def _register_site(
-        mut self, h: UInt64, name: StaticString, loc: SourceLocation
-    ) -> Int:
-        """Cold path: creates the anchor for a site on its first visit."""
-        # Keep load factor under 3/4 so probes stay short.
-        if (len(self.anchors) + 1) * 4 > len(self.site_slots) * 3:
-            self._grow_slots()
         var idx = len(self.anchors)
-        self.anchors.append(_Anchor[Self.M.S](name, loc))
-        var mask = len(self.site_slots) - 1
-        var i = Int(h & UInt64(mask))
-        while self.site_slots[i].idx >= 0:
-            i = (i + 1) & mask
-        self.site_slots[i] = _SiteSlot(h, name, idx)
+        var loc = SourceLocation(key.line, key.column, key.file)
+        self.anchors.append(_Anchor[Self.M.S](key.name, loc))
+        self.sites[key^] = idx
         return idx
-
-    def _grow_slots(mut self):
-        var new_cap = 16 if len(self.site_slots) == 0 else (
-            len(self.site_slots) * 2
-        )
-        var fresh = List[_SiteSlot](capacity=new_cap)
-        for _ in range(new_cap):
-            fresh.append(_SiteSlot(0, "", -1))
-        var mask = new_cap - 1
-        for ref s in self.site_slots:
-            if s.idx >= 0:
-                var i = Int(s.hash & UInt64(mask))
-                while fresh[i].idx >= 0:
-                    i = (i + 1) & mask
-                fresh[i] = s.copy()
-        self.site_slots = fresh^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -181,14 +153,13 @@ struct Profiler[M: Measurer, tag: StaticString = "professor.default"]:
     anywhere in the call tree without threading a profiler object through every
     frame. Distinct measurer types in one process need distinct `tag`s.
 
-    A zone site is identified by its comptime name (within a tag). The name's
-    hash is computed at compile time, so entering a zone costs one O(1) table
-    probe -- no string hashing or scanning. Opening a zone with the same name
-    in several places deliberately aggregates them into one logical site; the
-    recorded source location is where the site was first opened.
+    A zone site is identified by its comptime name and source location (within a
+    tag). Sites register lazily in a standard `Dict` on first execution, so code
+    in any module can instrument itself without central registration. Same-name
+    zones at different call sites remain distinct.
 
-    Statistics are aggregated on every zone close into a fixed per-site anchor
-    table (count, inclusive, exclusive, min, max, and the sums needed for mean
+    Statistics are aggregated on every zone close into a dense per-site anchor
+    list (count, inclusive, exclusive, min, max, and the sums needed for mean
     and variance). Nothing is logged per entry, so memory stays O(sites) and
     the hot path never allocates after a site's first visit.
 
@@ -215,48 +186,36 @@ struct Profiler[M: Measurer, tag: StaticString = "professor.default"]:
 
     @staticmethod
     def install(var measurer: Self.M, sites: Int = 128):
-        """Registers the measurer and pre-reserves the anchor and index
-        tables.
+        """Registers the measurer and pre-reserves anchors and the site registry.
 
-        `sites` is the expected number of distinct zone names. Exceeding it
+        `sites` is the expected number of distinct zone sites. Exceeding it
         grows the tables when a new name is first seen -- a one-time cost per
         site, not per entry.
         """
         var st = Self._state()
+        var expected_sites = sites
+        if expected_sites < len(st[].anchors):
+            expected_sites = len(st[].anchors)
         st[].measurer = measurer^
-        st[].anchors = List[_Anchor[Self.M.S]](capacity=sites)
-        var cap = 16
-        while cap < sites * 2:
-            cap *= 2
-        st[].site_slots = List[_SiteSlot](capacity=cap)
-        for _ in range(cap):
-            st[].site_slots.append(_SiteSlot(0, "", -1))
-        st[].open_serials = List[Int](capacity=64)
+        st[].anchors.reserve(expected_sites)
+        if len(st[].sites) == 0:
+            st[].sites = _SiteDict(capacity=expected_sites)
+        st[].anchors = []
         st[].current_open = -1
-        st[].next_serial = 0
+        st[].open_depth = 0
 
     @always_inline
     @staticmethod
     def zone[name: StaticString]() -> ProfileZone[Self.M]:
         """Opens the zone `name`, recording the caller's source location on
         the site's first visit."""
-        comptime h = _fnv1a(name)
+        comptime name_hash = _hash_comp_time(name)
+        var loc = call_location()
         var st = Self._state()
-        var idx = st[]._find_site(h, name)
-        if idx < 0:
-            idx = st[]._register_site(h, name, call_location())
-
-        var parent = st[].current_open
-        st[].current_open = idx
-        var serial = st[].next_serial
-        st[].next_serial += 1
-        st[].open_serials.append(serial)
-        var prev_inclusive = st[].anchors[idx].inclusive.copy()
-
-        # Sample as late as possible so open-side bookkeeping stays out of the
-        # measured interval.
-        var s = st[].measurer.value().measure()
-        return ProfileZone[Self.M](idx, parent, serial, prev_inclusive^, s^, st)
+        var h = _site_hash(name_hash, loc)
+        var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
+        var idx = st[]._resolve_site(key^)
+        return _open_zone(st, idx)
 
     @staticmethod
     def report() raises -> Report[Self.M.S]:
@@ -267,7 +226,7 @@ struct Profiler[M: Measurer, tag: StaticString = "professor.default"]:
         a report taken now would be garbage.
         """
         var st = Self._state()
-        var open_count = len(st[].open_serials)
+        var open_count = st[].open_depth
         if open_count != 0:
             raise Error(
                 String(t"report() called with {open_count} zone(s) still open")
@@ -293,21 +252,21 @@ struct Profiler[M: Measurer, tag: StaticString = "professor.default"]:
             )
         return Report[Self.M.S](stats^)
 
-    @staticmethod
-    def reset() raises:
-        """Clears the anchor table for a fresh run. Raises if any zone is
-        still open."""
-        var st = Self._state()
-        var open_count = len(st[].open_serials)
-        if open_count != 0:
-            raise Error(
-                String(t"reset() called with {open_count} zone(s) still open")
-            )
-        st[].anchors.clear()
-        for ref s in st[].site_slots:
-            s.idx = -1
-        st[].current_open = -1
-        st[].next_serial = 0
+
+@always_inline
+def _open_zone[
+    M: Measurer
+](st: UnsafePointer[_State[M], MutUntrackedOrigin], idx: Int) -> ProfileZone[M]:
+    var parent = st[].current_open
+    var depth = st[].open_depth
+    st[].current_open = idx
+    st[].open_depth = depth + 1
+    var prev_inclusive = st[].anchors[idx].inclusive.copy()
+
+    # Sample as late as possible so open-side bookkeeping stays out of the
+    # measured interval.
+    var sample = st[].measurer.value().measure()
+    return ProfileZone[M](idx, parent, depth, prev_inclusive^, sample^, st)
 
 
 @explicit_destroy(".close()")
@@ -326,7 +285,7 @@ struct ProfileZone[M: Measurer]:
 
     var anchor_idx: Int
     var parent_idx: Int
-    var serial: Int
+    var depth: Int
     var prev_inclusive: Self.M.S
     var opened: Self.M.S
     var st: UnsafePointer[_State[Self.M], MutUntrackedOrigin]
@@ -335,14 +294,14 @@ struct ProfileZone[M: Measurer]:
         out self,
         anchor_idx: Int,
         parent_idx: Int,
-        serial: Int,
+        depth: Int,
         var prev_inclusive: Self.M.S,
         var opened: Self.M.S,
         st: UnsafePointer[_State[Self.M], MutUntrackedOrigin],
     ):
         self.anchor_idx = anchor_idx
         self.parent_idx = parent_idx
-        self.serial = serial
+        self.depth = depth
         self.prev_inclusive = prev_inclusive^
         self.opened = opened^
         self.st = st
@@ -359,8 +318,8 @@ struct ProfileZone[M: Measurer]:
         # Sample first so close-side bookkeeping stays out of the interval.
         var s = self.st[].measurer.value().measure()
 
-        var n = len(self.st[].open_serials)
-        if n == 0 or self.st[].open_serials[n - 1] != self.serial:
+        var n = self.st[].open_depth
+        if n != self.depth + 1:
             var name = self.st[].anchors[self.anchor_idx].name
             var innermost: String
             if n == 0 or self.st[].current_open < 0:
@@ -371,10 +330,11 @@ struct ProfileZone[M: Measurer]:
                 )
             abort(
                 String(
-                    t"zone '{name}' closed out of order; innermost open zone is '{innermost}'"
+                    t"zone '{name}' closed out of order; innermost open zone is"
+                    t" '{innermost}'"
                 )
             )
-        _ = self.st[].open_serials.pop()
+        self.st[].open_depth = self.depth
         self.st[].current_open = self.parent_idx
 
         var e = s - self.opened
@@ -399,60 +359,14 @@ struct ProfileZone[M: Measurer]:
             p.exclusive = p.exclusive - e
 
 
-# ===----------------------------------------------------------------------=== #
-# Report
-# ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
-struct ZoneStat[S: Sample](Copyable, Movable):
-    """Aggregated statistics for one zone site.
 
-    `mean` and `variance` are per-close statistics of the inclusive elapsed
-    delta (`variance` is in squared sample units). Under recursion, inner
-    entries contribute their own deltas to count/min/max/mean/variance, while
-    `inclusive` spans only the outermost entry. `loc` is where the site was
-    first opened.
-    """
-
-    var name: StaticString
-    var loc: SourceLocation
-    var count: Int
-    var inclusive: Self.S
-    var exclusive: Self.S
-    var min: Self.S
-    var max: Self.S
-    var mean: Self.S
-    var variance: Self.S
+@always_inline
+def _same_static_string(lhs: StaticString, rhs: StaticString) -> Bool:
+    return lhs.unsafe_ptr() == rhs.unsafe_ptr() or lhs == rhs
 
 
-struct Report[S: Sample](Writable):
-    """The result of a profiling run: per-site statistics."""
-
-    var zones: List[ZoneStat[Self.S]]
-
-    def __init__(out self, var zones: List[ZoneStat[Self.S]]):
-        self.zones = zones^
-
-    def write_to(self, mut writer: Some[Writer]):
-        for ref z in self.zones:
-            writer.write(
-                z.name,
-                " (",
-                z.loc,
-                ")  count=",
-                z.count,
-                "  inclusive=",
-                z.inclusive,
-                "  exclusive=",
-                z.exclusive,
-                "  min=",
-                z.min,
-                "  max=",
-                z.max,
-                "  mean=",
-                z.mean,
-                "  variance=",
-                z.variance,
-                "\n",
-            )
+@always_inline
+def _hash_comp_time(string: StaticString) -> UInt64:
+    return hash[HasherType=default_comp_time_hasher](string)

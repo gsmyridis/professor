@@ -9,8 +9,8 @@ from professor.profile import Profiler
 
 # A measurer whose sample is empty and whose reading costs nothing: zone
 # open/close through it measures pure profiler bookkeeping (state fetch, site
-# probe, serial stack, anchor update) with no clock reads.
-struct NullSample(Sample, Defaultable, ImplicitlyCopyable):
+# probe, nesting bookkeeping, anchor update) with no clock reads.
+struct NullSample(Defaultable, ImplicitlyCopyable, Sample):
     def __init__(out self):
         pass
 
@@ -112,6 +112,56 @@ def bench_zone_wall(n: Int) -> Float64:
     return Float64(t1 - t0) / Float64(n)
 
 
+@no_inline
+def _mix_stage(x: UInt64, rounds: Int) -> UInt64:
+    var value = x
+    for _ in range(rounds):
+        value ^= value >> 12
+        value ^= value << 25
+        value ^= value >> 27
+        value *= 0x2545F4914F6CDD1D
+    return value
+
+
+@no_inline
+def _reduce_stage(x: UInt64) -> UInt64:
+    return (x ^ (x >> 32)) * 0x9E3779B185EBCA87
+
+
+def bench_workload_baseline(n: Int) -> Float64:
+    var value = UInt64(0x123456789ABCDEF)
+    var t0 = Int(perf_counter_ns())
+    for i in range(n):
+        value = _reduce_stage(_mix_stage(value + UInt64(i), 32))
+    var t1 = Int(perf_counter_ns())
+    keep(value)
+    return Float64(t1 - t0) / Float64(n)
+
+
+def bench_workload_profiled(n: Int) -> Float64:
+    var value = UInt64(0x123456789ABCDEF)
+    var t0 = Int(perf_counter_ns())
+    for i in range(n):
+        var z = WallProf.zone["pipeline"]()
+        value = _reduce_stage(_mix_stage(value + UInt64(i), 32))
+        z^.close()
+    var t1 = Int(perf_counter_ns())
+    keep(value)
+    return Float64(t1 - t0) / Float64(n)
+
+
+def bench_workload_null(n: Int) -> Float64:
+    var value = UInt64(0x123456789ABCDEF)
+    var t0 = Int(perf_counter_ns())
+    for i in range(n):
+        var z = NullProf.zone["pipeline"]()
+        value = _reduce_stage(_mix_stage(value + UInt64(i), 32))
+        z^.close()
+    var t1 = Int(perf_counter_ns())
+    keep(value)
+    return Float64(t1 - t0) / Float64(n)
+
+
 def _min_of[f: def(Int) thin -> Float64](n: Int) -> Float64:
     var best = f(n)
     for _ in range(REPS - 1):
@@ -142,16 +192,53 @@ def main() raises:
     var state = _min_of[bench_state_fetch](n)
     var znull = _min_of[bench_zone_null](n)
     var zwall = _min_of[bench_zone_wall](n)
+    var workload_n = black_box(200_000)
+    _ = bench_workload_baseline(workload_n)
+    _ = bench_workload_profiled(workload_n)
+    _ = bench_workload_null(workload_n)
+    WallProf.reset()
+    var workload = _min_of[bench_workload_baseline](workload_n)
+    var profiled_workload = _min_of[bench_workload_profiled](workload_n)
+    var null_workload = _min_of[bench_workload_null](workload_n)
 
     print("iterations per rep:", n, " reps:", REPS, " (min taken)")
     print("")
     print("baseline loop body          :", _fmt(base), "ns/iter")
-    print("+ 2x perf_counter_ns        :", _fmt(clock), "ns/iter  (delta", _fmt(clock - base), "ns)")
-    print("+ _state() fetch            :", _fmt(state), "ns/iter  (delta", _fmt(state - base), "ns)")
-    print("+ zone open/close, NullClock:", _fmt(znull), "ns/iter  (delta", _fmt(znull - base), "ns)")
-    print("+ zone open/close, WallClock:", _fmt(zwall), "ns/iter  (delta", _fmt(zwall - base), "ns)")
+    print(
+        "+ 2x perf_counter_ns        :",
+        _fmt(clock),
+        "ns/iter  (delta",
+        _fmt(clock - base),
+        "ns)",
+    )
+    print(
+        "+ _state() fetch            :",
+        _fmt(state),
+        "ns/iter  (delta",
+        _fmt(state - base),
+        "ns)",
+    )
+    print(
+        "+ zone open/close, NullClock:",
+        _fmt(znull),
+        "ns/iter  (delta",
+        _fmt(znull - base),
+        "ns)",
+    )
+    print(
+        "+ zone open/close, WallClock:",
+        _fmt(zwall),
+        "ns/iter  (delta",
+        _fmt(zwall - base),
+        "ns)",
+    )
     print("")
     print("breakdown of WallClock zone pair (", _fmt(zwall - base), "ns ):")
     print("  clock reads (2x)          :", _fmt(clock - base), "ns")
     print("  bookkeeping (null zone)   :", _fmt(znull - base), "ns")
     print("    of which _state() fetch :", _fmt(state - base), "ns")
+    print("")
+    print("realistic call-tree workload:")
+    print("  uninstrumented            :", _fmt(workload), "ns/iter")
+    print("  NullClock convenience     :", _fmt(null_workload), "ns/iter")
+    print("  WallClock instrumented    :", _fmt(profiled_workload), "ns/iter")
