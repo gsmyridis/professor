@@ -1,4 +1,4 @@
-trait Sample(Copyable, Defaultable, Writable, ImplicitlyDeletable):
+trait Sample(Copyable, Defaultable, ImplicitlyDeletable, Writable):
     """An absolute reading of some performance metric.
 
     Sample readings are subtracted to get deltas and added to aggregate them.
@@ -28,7 +28,7 @@ trait Sample(Copyable, Defaultable, Writable, ImplicitlyDeletable):
         ...
 
 
-trait Measurer(Movable, ImplicitlyDeletable):
+trait Measurer(Defaultable, ImplicitlyDeletable, Movable):
     """Produces `Sample`s on demand (wall clock, hardware counters, ...)."""
 
     comptime S: Sample

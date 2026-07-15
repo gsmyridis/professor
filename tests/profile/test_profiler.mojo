@@ -4,6 +4,7 @@ from professor.measure import Sample, Measurer
 from professor.measure.default import Nanos
 from professor.profile import Profiler, ProfileZone
 
+#TODO: Add test for manual and automatic anchors at the capacity boundary
 
 # A deterministic measurer: each `measure()` returns a monotonically
 # increasing tick, so durations are exact and independent of the wall clock.

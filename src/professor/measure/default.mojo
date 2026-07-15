@@ -8,7 +8,7 @@ from ._measure import Sample, Measurer
 
 
 @fieldwise_init
-struct Nanos(Sample, Defaultable, ImplicitlyCopyable):
+struct Nanos(Defaultable, ImplicitlyCopyable, Sample):
     """A wall-clock reading in nanoseconds.
 
     Products of `Nanos` (as accumulated for variance) are in squared
