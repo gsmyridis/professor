@@ -1,0 +1,55 @@
+from std.os import abort
+from std.sys.intrinsics import unlikely
+
+from professor.measure import Measurer
+from ._state import _CoreProfilerState
+
+
+@fieldwise_init
+@explicit_destroy(".close()")
+struct _ProfileZone[M: Measurer, C: Int] where C > 0:
+    comptime Metric = Self.M.S
+
+    var label: StaticString
+    """Semantic label."""
+
+    var anchor_index: Int
+    """Index of target anchor in the profiler state."""
+
+    var parent_index: Int
+    """Index of the anchor that is parent to the target anchor."""
+
+    var depth: Int
+    """Depth of the profiling zone."""
+
+    var metric_inclusive_prev: Self.Metric
+    """The target anchor's inclusive metric when the block opened."""
+
+    var metric_open: Self.Metric
+    """Value of the metric when the block was opened."""
+
+    var prof_state: UnsafePointer[
+        _CoreProfilerState[Self.M, Self.C], MutUntrackedOrigin
+    ]
+    """Pointer to the global profiler state."""
+
+    def close(deinit self):
+        # Sample first so close-side bookkeeping stays out of the interval.
+        var sample = self.prof_state[].instrument.measure()
+        var delta = sample - self.metric_open
+
+        # Check for LIFO for profiling zones
+        # TODO: Add a compile-time flag to gate it
+        if unlikely(self.prof_state[].current_open_depth != self.depth + 1):
+            abort("Mismatch open and close")
+
+        ref anchor = self.prof_state[].anchors[self.anchor_index]
+        anchor.hit_count += 1
+        anchor.exclusive = anchor.exclusive + delta
+        anchor.inclusive = self.metric_inclusive_prev + delta
+
+        # Account for recursive calls
+        self.prof_state[].current_open_depth = self.depth
+        self.prof_state[].current_open_idx = self.parent_index
+        ref parent = self.prof_state[].anchors[self.parent_index]
+        parent.exclusive = parent.exclusive - delta

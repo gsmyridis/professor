@@ -3,7 +3,7 @@
 !.pixi/config.toml
 
 # Apple
-.DS_Store
+**/.DS_Store
 
 # Agents' configurations
 .claude/
@@ -11,4 +11,6 @@
 
 # Others
 /darwin-kperf
-/scripts
+
+# Examples
+**/data

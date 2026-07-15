@@ -4,13 +4,16 @@ from std.time import perf_counter_ns
 from professor.apple import Sampler, PortableEvent, ThreadSampler
 
 
-def compute_baseline_delta(mut thread_sampler: ThreadSampler) raises -> List[UInt64]:
+def compute_baseline_delta(
+    mut thread_sampler: ThreadSampler,
+) raises -> List[UInt64]:
     var baseline_before = thread_sampler.sample()
     var baseline_after = thread_sampler.sample()
     var baseline_delta = baseline_before.copy()
     for i in range(len(baseline_before)):
         baseline_delta[i] = baseline_after[i] - baseline_before[i]
     return baseline_delta^
+
 
 def main() raises:
     var iterations = black_box(100)
@@ -28,7 +31,6 @@ def main() raises:
     print(compute_baseline_delta(thread_sampler))
     var time_after = perf_counter_ns()
     print("Time:", (time_after - time_before) / 4)
-
 
     var result = 0
     var work_before = thread_sampler.sample()

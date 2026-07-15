@@ -11,7 +11,6 @@ version = "0.1.0"
 
 [tasks]
 format = "mojo format ."
-main = "mojo run -I src examples/main.mojo"
 test-apple = """
     mojo run -I src tests/apple/test_database.mojo &
     mojo run -I src tests/apple/test_config.mojo &
@@ -21,3 +20,21 @@ test-apple = """
 
 [dependencies]
 mojo = ">=1.0.0b3.dev2026070806,<2"
+
+[feature.examples.dependencies]
+mojo = "==1.0.0b3.dev2026070806"
+numpy = ">=2.3.3,<3"
+python = ">=3.13,<3.15"
+
+[feature.examples.tasks]
+haversine-calculate = "python examples/haversine/gendata.py calculate"
+haversine-generate = "python examples/haversine/gendata.py generate 100000 --output examples/haversine/data/pairs.json"
+haversine-profile = """
+    mojo run -I src -I examples/haversine/parser examples/haversine/main.mojo examples/haversine/data/pairs.json
+"""
+haversine-test-parser = """
+    mojo run -I src -I examples/haversine/parser examples/haversine/test_parser.mojo
+"""
+
+[environments]
+examples = ["examples"]

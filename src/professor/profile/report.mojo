@@ -17,18 +17,20 @@ struct ZoneStat[S: Sample](Copyable, Movable):
     """
 
     var name: StaticString
-    var loc: SourceLocation
+    # var loc: SourceLocation
     var count: Int
     var inclusive: Self.S
     var exclusive: Self.S
-    var min: Self.S
-    var max: Self.S
-    var mean: Self.S
-    var variance: Self.S
+    # var min: Self.S
+    # var max: Self.S
+    # var mean: Self.S
+    # var variance: Self.S
+
 
 # ===----------------------------------------------------------------------=== #
 # Zone statistics
 # ===----------------------------------------------------------------------=== #
+
 
 struct Report[S: Sample](Writable):
     """The result of a profiling run: per-site statistics."""
@@ -43,20 +45,20 @@ struct Report[S: Sample](Writable):
             writer.write(
                 z.name,
                 " (",
-                z.loc,
+                # z.loc,
                 ")  count=",
                 z.count,
                 "  inclusive=",
                 z.inclusive,
                 "  exclusive=",
                 z.exclusive,
-                "  min=",
-                z.min,
-                "  max=",
-                z.max,
-                "  mean=",
-                z.mean,
-                "  variance=",
-                z.variance,
+                # "  min=",
+                # z.min,
+                # "  max=",
+                # z.max,
+                # "  mean=",
+                # z.mean,
+                # "  variance=",
+                # z.variance,
                 "\n",
             )
