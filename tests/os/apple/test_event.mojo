@@ -4,7 +4,7 @@ from std.testing import (
 )
 from std.testing import TestSuite
 
-from professor.apple.database import Database
+from professor.os.apple.database import Database
 
 
 def test_event_accessors_do_not_crash() raises:

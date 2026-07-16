@@ -3,8 +3,8 @@ from std.benchmark import black_box
 from std.memory import OptionalUnsafePointer, alloc, Layout
 from std.sys.info import size_of
 
-from professor.apple.ffi import kperf, kperf_data
-from professor.apple.ffi.testing import assert_success
+from professor.os.apple.ffi import kperf, kperf_data
+from professor.os.apple.ffi.testing import assert_success
 
 
 def find_event(

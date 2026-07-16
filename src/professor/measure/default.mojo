@@ -1,6 +1,6 @@
 from std.time import perf_counter_ns
 
-from ._measure import Instrument, Metric
+from .instrument import Instrument, Metric
 
 # ===----------------------------------------------------------------------=== #
 # Wall-clock measurer

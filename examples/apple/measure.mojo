@@ -1,4 +1,4 @@
-from professor.apple import Database, ConfigBuilder, PortableEvent, Version
+from professor.os.apple import Database, ConfigBuilder, PortableEvent, Version
 from std.testing import assert_equal
 
 

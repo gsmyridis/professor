@@ -1,4 +1,4 @@
-from professor.apple.ffi.kperf_data import (
+from professor.os.apple.ffi.kperf_data import (
     KPEPEvent,
     kpep_event_name,
     kpep_event_alias,

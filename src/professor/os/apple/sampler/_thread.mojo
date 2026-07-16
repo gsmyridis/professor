@@ -1,12 +1,12 @@
-from professor.apple.config import Configuration
-from professor.apple.kperf import (
+from professor.os.apple.config import Configuration
+from professor.os.apple.kperf import (
     get_counting,
     get_thread_counters,
     set_config,
     set_counting,
     set_thread_counting,
 )
-from professor.apple.ffi import kperf as ffi_kperf
+from professor.os.apple.ffi import kperf as ffi_kperf
 
 
 struct ThreadSampler(Movable):

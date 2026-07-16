@@ -11,15 +11,23 @@ version = "0.1.0"
 
 [tasks]
 format = "mojo format ."
+
+# Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
+
+# Test OS
 test-apple = """
-    mojo run -I src tests/apple/test_cpu.mojo \
-    && mojo run -I src tests/apple/test_database.mojo \
-    && mojo run -I src tests/apple/test_config.mojo \
-    && mojo run -I src tests/apple/test_event.mojo \
-    && mojo run -I src tests/apple/ffi/test_kperf_data_layout.mojo
+    mojo run -I src tests/os/apple/test_cpu.mojo \
+    && mojo run -I src tests/os/apple/test_database.mojo \
+    && mojo run -I src tests/os/apple/test_config.mojo \
+    && mojo run -I src tests/os/apple/test_event.mojo \
+    && mojo run -I src tests/os/apple/ffi/test_kperf_data_layout.mojo
 """
-test = { depends-on = ["test-profile", "test-apple"] }
+
+# Test Arch
+test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
+
+test = { depends-on = ["test-profile", "test-apple", "test-aarch64"] }
 
 [dependencies]
 mojo = ">=1.0.0b3.dev2026070806,<2"

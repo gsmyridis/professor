@@ -1,4 +1,4 @@
-"""Runtime layout checks for `professor.apple.ffi.kperf_data`.
+"""Runtime layout checks for `professor.os.apple.ffi.kperf_data`.
 
 These tests use `kperfdata.framework` getter functions as the oracle, then
 compare those results with direct reads from our Mojo struct definitions.
@@ -9,7 +9,7 @@ from std.ffi import c_char, c_size_t
 from std.testing import assert_equal, assert_true
 from std.testing import TestSuite
 
-from professor.apple.ffi.kperf_data import (
+from professor.os.apple.ffi.kperf_data import (
     ConstCStringPointer,
     KPEPConfig,
     KPEPDb,

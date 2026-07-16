@@ -1,15 +1,15 @@
 from std.ffi import c_int
 
-from professor.apple.config import ConfigBuilder
-from professor.apple.cpu import Cpu
-from professor.apple.database import Database
-from professor.apple.event import PortableEvent
-from professor.apple.kperf import (
+from professor.os.apple.config import ConfigBuilder
+from professor.os.apple.cpu import Cpu
+from professor.os.apple.database import Database
+from professor.os.apple.event import PortableEvent
+from professor.os.apple.kperf import (
     force_all_ctrs_get,
     force_all_ctrs_set,
 )
-from professor.apple.ffi import kperf as ffi_kperf
-from professor.apple.sampler._thread import ThreadSampler
+from professor.os.apple.ffi import kperf as ffi_kperf
+from professor.os.apple.sampler._thread import ThreadSampler
 
 
 struct Sampler(Movable):
