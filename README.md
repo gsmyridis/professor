@@ -40,12 +40,11 @@ from professor import Profiler, WallClock
 comptime Prof = Profiler[WallClock]
 
 def parse(input: String) -> Int:
-    var zone = Prof.zone["parse"]()
-    var result = 0
-    for codepoint in input.codepoints():
-        result += Int(codepoint.is_ascii_digit())
-    zone^.close()
-    return result
+    with Prof.zone["parse"]():
+        var result = 0
+        for codepoint in input.codepoints():
+            result += Int(codepoint.is_ascii_digit())
+        return result
 
 
 def main() raises:
