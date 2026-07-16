@@ -1,1 +1,1 @@
-from ._measure import Sample, Measurer
+from ._measure import Instrument, Metric

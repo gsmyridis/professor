@@ -1,4 +1,4 @@
-from professor.measure import Sample
+from professor.measure import Metric
 from std.reflection import SourceLocation
 
 # ===----------------------------------------------------------------------=== #
@@ -7,7 +7,7 @@ from std.reflection import SourceLocation
 
 
 @fieldwise_init
-struct ZoneStat[S: Sample](Copyable, Movable):
+struct ZoneStat[S: Metric](Copyable, Movable):
     """Aggregated statistics for one zone site.
 
     `mean` and `variance` are per-close statistics of the inclusive elapsed
@@ -32,7 +32,7 @@ struct ZoneStat[S: Sample](Copyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct Report[S: Sample](Writable):
+struct Report[S: Metric](Writable):
     """The result of a profiling run: per-site statistics."""
 
     var zones: List[ZoneStat[Self.S]]

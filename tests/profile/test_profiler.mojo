@@ -1,14 +1,14 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-from professor import Sample, Measurer, Profiler, Nanos
+from professor import Instrument, Profiler, Nanos
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
 # increasing tick, so durations are exact and independent of the wall clock.
 # Profiler state is created lazily per `Tag` with a default-constructed
 # measurer, so every test uses its own tag to get a fresh Ticker at 0.
-struct Ticker(Measurer):
-    comptime S = Nanos
+struct Ticker(Instrument):
+    comptime MetricType = Nanos
     var now: Int
 
     def __init__(out self):

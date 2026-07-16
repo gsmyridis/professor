@@ -3,7 +3,7 @@ from std.os import abort
 from std.sys.intrinsics import unlikely
 from std.reflection import call_location
 
-from professor.measure import Sample, Measurer
+from professor.measure import Instrument
 from ._anchor import _Anchor
 from ._state import (
     ROOT_ANCHOR_INDEX,
@@ -23,7 +23,7 @@ from .report import Report, ZoneStat
 
 
 struct Profiler[
-    M: Measurer,
+    I: Instrument,
     *,
     Capacity: Int = CAPACITY_DEFAULT,
     Tag: StaticString = "default",
@@ -34,9 +34,9 @@ struct Profiler[
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime _ProfilerStateType = _ProfilerState[Self.M, Self.Capacity]
+    comptime _ProfilerStateType = _ProfilerState[Self.I, Self.Capacity]
 
-    comptime _CoreProfilerStateType = _CoreProfilerState[Self.M, Self.Capacity]
+    comptime _CoreProfilerStateType = _CoreProfilerState[Self.I, Self.Capacity]
 
     comptime _global_state = _Global[Self.Tag, Self._init]
     """Global profiler state."""
@@ -75,7 +75,7 @@ struct Profiler[
     @staticmethod
     def zone[
         name: StaticString, index: Int
-    ]() -> _ProfileZone[Self.M, Self.Capacity] where (
+    ]() -> _ProfileZone[Self.I, Self.Capacity] where (
         index >= ROOT_ANCHOR_INDEX and index < Self.Capacity
     ):
         """Opens the zone `name` targeting the profile anchor with `index`.
@@ -96,7 +96,7 @@ struct Profiler[
 
     @always_inline
     @staticmethod
-    def zone[name: StaticString]() -> _ProfileZone[Self.M, Self.Capacity]:
+    def zone[name: StaticString]() -> _ProfileZone[Self.I, Self.Capacity]:
         """Opens the profile zone `name`.
 
         The target profile anchor is resolved during runtime based on the
@@ -124,7 +124,7 @@ struct Profiler[
     # ===--------------------------------------------------------------------===
 
     @staticmethod
-    def report() raises -> Report[Self.M.S]:
+    def report() raises -> Report[Self.I.MetricType]:
         """Derives per-site statistics from the anchor table.
 
         Raises if any zone is still open: exclusive times are transiently
@@ -137,12 +137,14 @@ struct Profiler[
             raise Error(
                 String(t"report() called with {open_count} zone(s) still open")
             )
-        var stats = List[ZoneStat[Self.M.S]](capacity=len(st[].anchors))
+        var stats = List[ZoneStat[Self.I.MetricType]](
+            capacity=len(st[].anchors)
+        )
         for ref a in st[].anchors:
             if a.hit_count == 0:
                 continue
             stats.append(
-                ZoneStat[Self.M.S](
+                ZoneStat[Self.I.MetricType](
                     a.label,
                     # a.loc,
                     a.hit_count,
@@ -150,16 +152,16 @@ struct Profiler[
                     a.exclusive.copy(),
                 )
             )
-        return Report[Self.M.S](stats^)
+        return Report[Self.I.MetricType](stats^)
 
 
 @always_inline
 def _open_zone[
-    M: Measurer, C: Int, //, label: StaticString
+    I: Instrument, C: Int, //, label: StaticString
 ](
-    st: UnsafePointer[_CoreProfilerState[M, C], MutUntrackedOrigin],
+    st: UnsafePointer[_CoreProfilerState[I, C], MutUntrackedOrigin],
     idx: Int,
-) -> _ProfileZone[M, C] where (C > 0):
+) -> _ProfileZone[I, C] where (C > 0):
     comptime assert label != UNCLAIMED_ANCHOR_LABEL, String(
         t"The semantic label of a profiling zone cannot be empty, i.e."
         t" ('{UNCLAIMED_ANCHOR_LABEL}')."
@@ -197,6 +199,6 @@ def _open_zone[
     # measured interval.
     var sample = st[].instrument.measure()
 
-    return _ProfileZone[M](
+    return _ProfileZone[I](
         label, idx, parent, depth, prev_inclusive^, sample^, st
     )

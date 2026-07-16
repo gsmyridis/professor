@@ -1,14 +1,14 @@
 from std.os import abort
 from std.sys.intrinsics import unlikely
 
-from professor.measure import Measurer
+from professor.measure import Instrument
 from ._state import _CoreProfilerState
 
 
 @fieldwise_init
 @explicit_destroy(".close()")
-struct _ProfileZone[M: Measurer, C: Int] where C > 0:
-    comptime Metric = Self.M.S
+struct _ProfileZone[I: Instrument, C: Int] where C > 0:
+    comptime MetricType = Self.I.MetricType
 
     var label: StaticString
     """Semantic label."""
@@ -22,14 +22,14 @@ struct _ProfileZone[M: Measurer, C: Int] where C > 0:
     var depth: Int
     """Depth of the profiling zone."""
 
-    var metric_inclusive_prev: Self.Metric
+    var metric_inclusive_prev: Self.MetricType
     """The target anchor's inclusive metric when the block opened."""
 
-    var metric_open: Self.Metric
+    var metric_open: Self.MetricType
     """Value of the metric when the block was opened."""
 
     var prof_state: UnsafePointer[
-        _CoreProfilerState[Self.M, Self.C], MutUntrackedOrigin
+        _CoreProfilerState[Self.I, Self.C], MutUntrackedOrigin
     ]
     """Pointer to the global profiler state."""
 

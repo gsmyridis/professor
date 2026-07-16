@@ -2,15 +2,15 @@ from std.benchmark import keep
 from std.time import perf_counter_ns
 from std.benchmark import black_box
 
-from professor.measure import Sample, Measurer
+from professor.measure import Instrument, Metric
 from professor.measure.default import WallClock
 from professor.profile import Profiler
 
 
-# A measurer whose sample is empty and whose reading costs nothing: zone
+# An instrument whose metric is empty and whose reading costs nothing: zone
 # open/close through it measures pure profiler bookkeeping (state fetch, site
 # probe, nesting bookkeeping, anchor update) with no clock reads.
-struct NullSample(Defaultable, ImplicitlyCopyable, Sample):
+struct NullSample(Defaultable, ImplicitlyCopyable, Metric):
     def __init__(out self):
         pass
 
@@ -36,8 +36,8 @@ struct NullSample(Defaultable, ImplicitlyCopyable, Sample):
         writer.write("-")
 
 
-struct NullClock(Measurer):
-    comptime S = NullSample
+struct NullClock(Instrument):
+    comptime MetricType = NullSample
 
     def __init__(out self):
         pass
@@ -46,8 +46,8 @@ struct NullClock(Measurer):
         return NullSample()
 
 
-comptime WallProf = Profiler[WallClock, "bench.wall"]
-comptime NullProf = Profiler[NullClock, "bench.null"]
+comptime WallProf = Profiler[WallClock, Tag="bench.wall"]
+comptime NullProf = Profiler[NullClock, Tag="bench.null"]
 
 comptime REPS = 5
 
@@ -176,16 +176,11 @@ def _fmt(x: Float64) -> Float64:
 
 
 def main() raises:
-    WallProf.install(WallClock())
-    NullProf.install(NullClock())
-
     var n = black_box(1_000_000)
     # Warmup: register sites, create globals, warm caches.
     _ = bench_baseline(n)
     _ = bench_zone_null(n)
     _ = bench_zone_wall(n)
-    WallProf.reset()
-    NullProf.reset()
 
     var base = _min_of[bench_baseline](n)
     var clock = _min_of[bench_clock_pair](n)
@@ -196,7 +191,6 @@ def main() raises:
     _ = bench_workload_baseline(workload_n)
     _ = bench_workload_profiled(workload_n)
     _ = bench_workload_null(workload_n)
-    WallProf.reset()
     var workload = _min_of[bench_workload_baseline](workload_n)
     var profiled_workload = _min_of[bench_workload_profiled](workload_n)
     var null_workload = _min_of[bench_workload_null](workload_n)

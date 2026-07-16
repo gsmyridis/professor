@@ -1,7 +1,7 @@
-from professor.measure import Sample
+from professor.measure import Metric
 
 
-struct _Anchor[M: Sample](Copyable, Defaultable):
+struct _Anchor[M: Metric](Copyable, Defaultable):
     var label: StaticString
     """Semantic label."""
 
