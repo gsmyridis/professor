@@ -86,6 +86,7 @@ def main() raises:
         )
         return
 
+    HaversineProfiler.start()
     var input = Path(args[1]).read_text()
     var parsed = parse_json_profiled(input)
     if not parsed:
@@ -103,6 +104,7 @@ def main() raises:
         raise Error("JSON member 'pairs' must be an array")
 
     var computed_average = compute_average(pairs, radius)
+    HaversineProfiler.end()
 
     print("Number of pairs:", len(pairs.array_value))
     print("Radius:", radius)

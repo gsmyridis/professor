@@ -27,6 +27,14 @@ trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):
     def max(self, other: Self) -> Self:
         ...
 
+    def scalar_value(self) -> Optional[Float64]:
+        """Returns a scalar suitable for relative report comparisons.
+
+        Metrics with multiple values can keep the default. Their values still
+        appear in reports, but percentage columns show `N/A`.
+        """
+        return None
+
 
 trait Instrument(Defaultable, ImplicitlyDeletable, Movable):
     """Produces `Metric` samples on demand (wall clock, hardware counters, ...).

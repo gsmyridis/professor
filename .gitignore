@@ -9,5 +9,8 @@
 .claude/
 .codex/
 
+# Python
+**/__pycache__
+
 # Examples
 **/data

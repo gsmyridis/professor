@@ -31,6 +31,18 @@ struct _CoreProfilerState[I: Instrument, Capacity: Int](
     var instrument: Self.I
     """Instrument that gives samples."""
 
+    var start_metric: Self.MetricType
+    """Metric sampled when the profiling session started."""
+
+    var total_metric: Self.MetricType
+    """Metric elapsed between the session's start and end."""
+
+    var has_started: Bool
+    """Whether `Profiler.start()` has opened a session."""
+
+    var has_ended: Bool
+    """Whether `Profiler.end()` has closed the session."""
+
     var anchors: Self._AnchorArrayType
     """Array of profile anchors."""
 
@@ -48,6 +60,10 @@ struct _CoreProfilerState[I: Instrument, Capacity: Int](
     def __init__(out self):
         self.anchors = Self._AnchorArrayType(fill=_Anchor[Self.MetricType]())
         self.instrument = Self.I()
+        self.start_metric = Self.MetricType()
+        self.total_metric = Self.MetricType()
+        self.has_started = False
+        self.has_ended = False
         self.current_open_idx = ROOT_ANCHOR_INDEX
         self.current_open_depth = 0
 
