@@ -127,9 +127,19 @@ def do_work() -> Int:
 
 ### Zones, nesting, and error paths
 
+Zones can also be scoped with a `with` statement, which closes them
+automatically when the block exits — including on the unwind path of a
+raising body:
+
+```mojo
+def compute(pairs: Value) raises -> Float64:
+    with MyProfiler.zone["compute"]():
+        return _compute(pairs)
+```
+
 Zones nest, and must close in LIFO order — Professor aborts on a mismatched close.
-Because the zone handle is linear, every control-flow path must consume it.
-In raising code, close the zone before propagating the error:
+When you hold the zone as a linear value instead, every control-flow path must
+consume it; in raising code, close the zone before propagating the error:
 
 ```mojo
 def compute(pairs: Value) raises -> Float64:
@@ -143,6 +153,9 @@ def compute(pairs: Value) raises -> Float64:
     zone^.close()
     return result
 ```
+
+Prefer `with` unless you need to close the zone somewhere other than the end
+of a scope.
 
 Each `zone["label"]()` call site gets its own anchor, resolved at runtime from the label and call location.
 For hot paths where even that lookup matters, you can pin the anchor at compile time:
@@ -495,8 +508,6 @@ Instrumentation profiler:
 
 - Richer reports: per-zone min/max/mean/variance, source locations, and
   bottleneck summaries.
-- `with`-statement support for zones, alongside the linear `zone^.close()`
-  API.
 - A `TimestampCounter` measurer (cheap invariant TSC timing) next to
   `WallClock`.
 - A ready-made hardware-counter `Measurer` for the Apple backend.

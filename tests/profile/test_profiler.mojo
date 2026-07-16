@@ -1,4 +1,4 @@
-from std.testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 from professor import Sample, Measurer, Profiler, Nanos
 
@@ -243,6 +243,54 @@ def test_report_is_repeatable() raises:
     assert_equal(
         first.zones[0].inclusive.value, second.zones[0].inclusive.value
     )
+
+
+def test_with_statement_closes_zone() raises:
+    comptime Prof = Profiler[Ticker, Tag="test.with"]
+
+    with Prof.zone["scoped"]():  # opens at tick 1, closes at tick 2
+        pass
+
+    var rep = Prof.report()
+    assert_equal(len(rep.zones), 1)
+    assert_true(rep.zones[0].name == "scoped")
+    assert_equal(rep.zones[0].count, 1)
+    assert_equal(rep.zones[0].inclusive.value, 1)
+
+
+def test_with_statement_nests_with_linear_zones() raises:
+    comptime Prof = Profiler[Ticker, Tag="test.with-nested"]
+
+    with Prof.zone["outer"]():  # tick 1
+        var inner = Prof.zone["inner"]()  # tick 2
+        inner^.close()  # tick 3
+        # outer closes at tick 4
+
+    var rep = Prof.report()
+    assert_equal(len(rep.zones), 2)
+    for ref z in rep.zones:
+        if z.name == "outer":
+            assert_equal(z.inclusive.value, 3)
+            assert_equal(z.exclusive.value, 2)  # 3 - 1 child
+        else:
+            assert_true(z.name == "inner")
+            assert_equal(z.inclusive.value, 1)
+
+
+def test_with_statement_closes_zone_on_raise() raises:
+    comptime Prof = Profiler[Ticker, Tag="test.with-raise"]
+
+    # Unlike a linear handle, a with-scoped zone closes itself on the unwind
+    # path, so `assert_raises` cannot abandon it.
+    with assert_raises(contains="boom"):
+        with Prof.zone["failing"]():  # tick 1
+            raise Error("boom")  # __exit__ closes at tick 2 while unwinding
+
+    # The zone must be closed, so report() succeeds and counted the hit.
+    var rep = Prof.report()
+    assert_equal(len(rep.zones), 1)
+    assert_equal(rep.zones[0].count, 1)
+    assert_equal(rep.zones[0].inclusive.value, 1)
 
 
 def main() raises:
