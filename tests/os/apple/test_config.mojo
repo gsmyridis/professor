@@ -5,7 +5,12 @@ from std.testing import (
 )
 from std.testing import TestSuite
 
-from professor.apple import ConfigBuilder, Database, AppleEvent, PortableEvent
+from professor.os.apple import (
+    ConfigBuilder,
+    Database,
+    AppleEvent,
+    PortableEvent,
+)
 
 
 def test_config_create() raises:

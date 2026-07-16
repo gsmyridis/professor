@@ -1,7 +1,7 @@
 from std.benchmark import black_box
 from std.time import perf_counter_ns
 
-from professor.apple import Sampler, PortableEvent, ThreadSampler
+from professor.os.apple import Sampler, PortableEvent, ThreadSampler
 
 
 def compute_baseline_delta(

@@ -6,8 +6,8 @@ from std.ffi import c_char, c_size_t, c_int
 from std.testing import assert_not_equal
 from std.memory import alloc, Layout
 
-from professor.apple.ffi import kperf, kperf_data
-from professor.apple.ffi.testing import assert_success
+from professor.os.apple.ffi import kperf, kperf_data
+from professor.os.apple.ffi.testing import assert_success
 
 
 def print_counting(get_fn: def() thin -> UInt32):

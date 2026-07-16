@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-from professor.apple import Architecture, Cpu, Database
+from professor.os.apple import Architecture, Cpu, Database
 
 
 def test_cpu_from_database_name_mapping() raises:

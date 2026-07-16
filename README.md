@@ -276,7 +276,7 @@ Minimal usage looks like this:
 ```mojo
 from std.benchmark import black_box
 
-from professor.apple import Sampler, PortableEvent
+from professor.os.apple import Sampler, PortableEvent
 
 
 def main() raises:
@@ -377,7 +377,7 @@ sudo pixi run mojo run -I src examples/apple/ffi/kperf_data.mojo
 thread:
 
 ```mojo
-from professor.apple import CountMode
+from professor.os.apple import CountMode
 
 cfg.add_event(
     db.get_event(PortableEvent.Instructions),
@@ -412,7 +412,7 @@ Use `Database` and `ConfigBuilder` when you need to inspect or build a
 configuration yourself:
 
 ```mojo
-from professor.apple import Database, ConfigBuilder, PortableEvent
+from professor.os.apple import Database, ConfigBuilder, PortableEvent
 
 
 var db = Database()
@@ -474,7 +474,8 @@ requested.
 
 ### FFI layer
 
-The direct bindings live under [`src/professor/apple/ffi/`](src/professor/apple/ffi/):
+The direct bindings live under
+[`src/professor/os/apple/ffi/`](src/professor/os/apple/ffi/):
 
 - `kperf.mojo` binds KPC and kperf functions.
 - `kperf_data.mojo` binds kpep database and configuration functions.

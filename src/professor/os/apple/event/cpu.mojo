@@ -1,4 +1,4 @@
-from professor.apple.cpu import Cpu
+from professor.os.apple.cpu import Cpu
 
 from .event import Event
 

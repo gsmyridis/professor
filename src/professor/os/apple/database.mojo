@@ -164,7 +164,7 @@ struct Database(Movable):
 
         # `kpep_db_events` does not round-trip reliably through Mojo's
         # pointer-buffer FFI here; the contiguous `event_arr` layout is checked
-        # against framework getters in `tests/apple/test_kperf_layout.mojo`.
+        # against framework getters in `tests/os/apple/test_kperf_layout.mojo`.
         var result = List[DatabaseEvent[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):

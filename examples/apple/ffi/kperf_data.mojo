@@ -4,8 +4,8 @@ from std.testing import assert_equal
 from std.memory.alloc import alloc, dealloc, Layout
 from std.sys.info import size_of
 
-from professor.apple.ffi import kperf, kperf_data
-from professor.apple.ffi.testing import assert_success
+from professor.os.apple.ffi import kperf, kperf_data
+from professor.os.apple.ffi.testing import assert_success
 from professor.ffi_utils import cstr_to_string, ConstCStringPointer
 
 

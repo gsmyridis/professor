@@ -156,7 +156,9 @@ struct Tokenizer:
                     self._cursor += 1
                     return value^
                 if byte == Byte(ord("\\")):
-                    raise Error("escaped strings are not supported in this example")
+                    raise Error(
+                        "escaped strings are not supported in this example"
+                    )
                 if byte < Byte(0x20):
                     raise Error("control character in JSON string")
                 self._cursor += 1
@@ -176,7 +178,9 @@ struct Tokenizer:
                     raise Error("leading zero in JSON number")
             else:
                 if self._cursor >= len(self._input) or not (
-                    Byte(ord("1")) <= self._input[self._cursor] <= Byte(ord("9"))
+                    Byte(ord("1"))
+                    <= self._input[self._cursor]
+                    <= Byte(ord("9"))
                 ):
                     raise Error("invalid JSON number")
                 self._cursor += 1

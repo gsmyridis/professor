@@ -1,1 +1,1 @@
-from ._measure import Instrument, Metric
+from .instrument import Instrument, Metric

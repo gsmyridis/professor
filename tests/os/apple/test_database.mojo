@@ -6,7 +6,7 @@ from std.testing import (
 from std.testing import TestSuite
 from std.sys import CompilationTarget
 
-from professor.apple import AppleEvent, Architecture, Database, Cpu
+from professor.os.apple import AppleEvent, Architecture, Database, Cpu
 
 
 def test_database_create() raises:
