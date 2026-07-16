@@ -38,6 +38,9 @@ struct Nanos(Defaultable, ImplicitlyCopyable, Metric):
     def max(self, other: Self) -> Self:
         return self if self.value > other.value else other
 
+    def scalar_value(self) -> Optional[Float64]:
+        return Float64(self.value)
+
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.value, "ns")
 

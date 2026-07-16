@@ -13,7 +13,7 @@ from professor.profile import Profiler
 
 
 comptime HaversineProfiler = Profiler[
-    WallClock, Tag="haversine.parser", Capacity=5
+    WallClock, Tag="haversine.parser", Capacity=10
 ]
 
 
@@ -145,75 +145,77 @@ struct Tokenizer:
         self._cursor += len(expected_bytes)
 
     def _next_string(mut self) raises -> String:
-        var start = self._cursor
-        while self._cursor < len(self._input):
-            var byte = self._input[self._cursor]
-            if byte == Byte(ord('"')):
-                var value = String(
-                    unsafe_from_utf8=Span(self._input)[start : self._cursor]
-                )
+        with HaversineProfiler.zone["parse_string"]():
+            var start = self._cursor
+            while self._cursor < len(self._input):
+                var byte = self._input[self._cursor]
+                if byte == Byte(ord('"')):
+                    var value = String(
+                        unsafe_from_utf8=Span(self._input)[start : self._cursor]
+                    )
+                    self._cursor += 1
+                    return value^
+                if byte == Byte(ord("\\")):
+                    raise Error("escaped strings are not supported in this example")
+                if byte < Byte(0x20):
+                    raise Error("control character in JSON string")
                 self._cursor += 1
-                return value^
-            if byte == Byte(ord("\\")):
-                raise Error("escaped strings are not supported in this example")
-            if byte < Byte(0x20):
-                raise Error("control character in JSON string")
-            self._cursor += 1
-        raise Error("reached EOF while reading JSON string")
+            raise Error("reached EOF while reading JSON string")
 
     def _next_number(mut self, start: Int) raises -> Float64:
-        self._cursor = start
+        with HaversineProfiler.zone["parse_number"]():
+            self._cursor = start
 
-        if self._consume(Byte(ord("-"))):
-            pass
+            if self._consume(Byte(ord("-"))):
+                pass
 
-        if self._consume(Byte(ord("0"))):
-            if self._cursor < len(self._input) and _is_digit(
-                self._input[self._cursor]
-            ):
-                raise Error("leading zero in JSON number")
-        else:
-            if self._cursor >= len(self._input) or not (
-                Byte(ord("1")) <= self._input[self._cursor] <= Byte(ord("9"))
-            ):
-                raise Error("invalid JSON number")
-            self._cursor += 1
-            while self._cursor < len(self._input) and _is_digit(
-                self._input[self._cursor]
-            ):
+            if self._consume(Byte(ord("0"))):
+                if self._cursor < len(self._input) and _is_digit(
+                    self._input[self._cursor]
+                ):
+                    raise Error("leading zero in JSON number")
+            else:
+                if self._cursor >= len(self._input) or not (
+                    Byte(ord("1")) <= self._input[self._cursor] <= Byte(ord("9"))
+                ):
+                    raise Error("invalid JSON number")
                 self._cursor += 1
+                while self._cursor < len(self._input) and _is_digit(
+                    self._input[self._cursor]
+                ):
+                    self._cursor += 1
 
-        if self._consume(Byte(ord("."))):
-            if self._cursor >= len(self._input) or not _is_digit(
+            if self._consume(Byte(ord("."))):
+                if self._cursor >= len(self._input) or not _is_digit(
+                    self._input[self._cursor]
+                ):
+                    raise Error("expected digit after decimal point")
+                while self._cursor < len(self._input) and _is_digit(
+                    self._input[self._cursor]
+                ):
+                    self._cursor += 1
+
+            if self._consume(Byte(ord("e"))) or self._consume(Byte(ord("E"))):
+                if not self._consume(Byte(ord("+"))):
+                    _ = self._consume(Byte(ord("-")))
+                if self._cursor >= len(self._input) or not _is_digit(
+                    self._input[self._cursor]
+                ):
+                    raise Error("expected exponent digits")
+                while self._cursor < len(self._input) and _is_digit(
+                    self._input[self._cursor]
+                ):
+                    self._cursor += 1
+
+            if self._cursor < len(self._input) and not _is_number_delimiter(
                 self._input[self._cursor]
             ):
-                raise Error("expected digit after decimal point")
-            while self._cursor < len(self._input) and _is_digit(
-                self._input[self._cursor]
-            ):
-                self._cursor += 1
+                raise Error("invalid character in JSON number")
 
-        if self._consume(Byte(ord("e"))) or self._consume(Byte(ord("E"))):
-            if not self._consume(Byte(ord("+"))):
-                _ = self._consume(Byte(ord("-")))
-            if self._cursor >= len(self._input) or not _is_digit(
-                self._input[self._cursor]
-            ):
-                raise Error("expected exponent digits")
-            while self._cursor < len(self._input) and _is_digit(
-                self._input[self._cursor]
-            ):
-                self._cursor += 1
-
-        if self._cursor < len(self._input) and not _is_number_delimiter(
-            self._input[self._cursor]
-        ):
-            raise Error("invalid character in JSON number")
-
-        var number = String(
-            unsafe_from_utf8=Span(self._input)[start : self._cursor]
-        )
-        return atof(number)
+            var number = String(
+                unsafe_from_utf8=Span(self._input)[start : self._cursor]
+            )
+            return atof(number)
 
     def _eat_whitespace(mut self):
         while self._cursor < len(self._input):

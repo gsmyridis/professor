@@ -176,6 +176,8 @@ def _fmt(x: Float64) -> Float64:
 
 
 def main() raises:
+    WallProf.start()
+    NullProf.start()
     var n = black_box(1_000_000)
     # Warmup: register sites, create globals, warm caches.
     _ = bench_baseline(n)
@@ -236,3 +238,5 @@ def main() raises:
     print("  uninstrumented            :", _fmt(workload), "ns/iter")
     print("  NullClock convenience     :", _fmt(null_workload), "ns/iter")
     print("  WallClock instrumented    :", _fmt(profiled_workload), "ns/iter")
+    NullProf.end()
+    WallProf.end()

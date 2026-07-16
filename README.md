@@ -49,9 +49,9 @@ def parse(input: String) -> Int:
 
 
 def main() raises:
-    var zone = Prof.zone["total"]()
+    Prof.start()
     var count = parse("professor v0.1")
-    zone^.close()
+    Prof.end()
 
     print("digits:", count)
     print(Prof.report())
@@ -68,9 +68,10 @@ is a _linear_ value: the compiler forces you to consume it with
 `zone^.close()`, so a forgotten close is a compile error, not a silent
 measurement bug.
 
-`Prof.report()` prints per-zone statistics: hit count, inclusive metric (time
-spent in the zone, children included) and exclusive metric (time spent in the
-zone minus nested zones). Recursive zones are accounted for correctly.
+`Prof.start()` and `Prof.end()` bracket the program-wide measurement interval.
+`Prof.report()` prints its total plus per-zone hit count, inclusive and
+exclusive metrics, inclusive time per hit, and inclusive percentage of the
+program total. Recursive zones are accounted for correctly.
 
 For a complete worked example — a JSON parser computing haversine distances,
 with zones around parsing, tokenization, and computation — see
@@ -166,16 +167,30 @@ var zone = MyProfiler.zone["hot_loop", 3]()  # anchor index chosen by you
 
 ### Reading the report
 
-`report()` returns a `Report` you can print or inspect. For each zone it
-currently includes:
+Call `start()` before opening any zones and `end()` after the last zone closes.
+`report()` then returns a `Report` you can print or inspect. Printing writes the
+program total and an aligned table to standard output with the zone's semantic
+name, call site relative to the current working directory, hit count, inclusive
+and exclusive metrics, inclusive metric per hit, and inclusive percentage of
+the program total. On a color terminal, only the percentage is colored: red at
+50% or above, yellow at 20% or above, and green below 20%. Redirected output
+stays plain text.
+
+For each zone the report currently includes:
 
 - `count`: how many times the zone closed.
 - `inclusive`: metric accumulated while the zone was open, children included.
 - `exclusive`: inclusive minus the metric attributed to nested zones.
+- `loc`: source file, line, and column for the profiling call site.
 
-`report()` raises if any zone is still open, because exclusive metrics are
-transiently inconsistent while a zone is in flight. Min/max/mean/variance per
-zone are on the roadmap.
+The report's `total` field contains the metric elapsed between `start()` and
+`end()`. Metrics that do not provide a scalar value still print totals and
+per-hit values, but show `N/A` for percentages.
+
+`end()` and `report()` raise if any zone is still open, because exclusive
+metrics are transiently inconsistent while a zone is in flight. `report()`
+also requires a completed start/end interval. Min/max/mean/variance per zone
+are on the roadmap.
 
 ### Custom metrics: `Instrument` and `Metric`
 
@@ -506,8 +521,7 @@ A ready-made counter-backed measurer is on the roadmap.
 
 Instrumentation profiler:
 
-- Richer reports: per-zone min/max/mean/variance, source locations, and
-  bottleneck summaries.
+- Richer reports: per-zone min/max/mean/variance and bottleneck summaries.
 - A `TimestampCounter` instrument (cheap invariant TSC timing) next to
   `WallClock`.
 - A ready-made hardware-counter `Instrument` for the Apple backend.

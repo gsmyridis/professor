@@ -1,9 +1,11 @@
 from std.ffi import _Global
 from std.os import abort
 from std.sys.intrinsics import unlikely
-from std.reflection import call_location
+from std.reflection import call_location, SourceLocation
 
 from professor.measure import Instrument
+from professor.report import Report, ZoneStat
+
 from ._anchor import _Anchor
 from ._state import (
     ROOT_ANCHOR_INDEX,
@@ -14,7 +16,6 @@ from ._state import (
 from ._zone import _ProfileZone
 from ._consts import UNCLAIMED_ANCHOR_LABEL
 from ._registry import _SiteKey, _hash_comp_time, _site_hash
-from .report import Report, ZoneStat
 
 
 # ===------------------------------------------------------------------------===
@@ -68,6 +69,46 @@ struct Profiler[
         return UnsafePointer(to=state[].core)
 
     # ===--------------------------------------------------------------------===
+    # Profiling session
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    def start() raises:
+        """Starts the program-wide profiling interval."""
+        var st = Self._core_state()
+        if st[].has_started:
+            raise Error("start() called more than once")
+        if st[].current_open_depth != 0:
+            raise Error("start() called while a zone is open")
+
+        # Measure after the checks.
+        st[].start_metric = st[].instrument.measure()
+        st[].has_started = True
+
+    @staticmethod
+    def end() raises:
+        """Ends the profiling interval and computes the program total."""
+        var st = Self._core_state()
+
+        # Measure as early as possible.
+        var end_metric = st[].instrument.measure()
+
+        if not st[].has_started:
+            raise Error("end() called before start()")
+        if st[].has_ended:
+            raise Error("end() called more than once")
+        if st[].current_open_depth != 0:
+            raise Error(
+                String(
+                    t"end() called with {st[].current_open_depth} zone(s) still"
+                    t" open"
+                )
+            )
+
+        st[].total_metric = end_metric - st[].start_metric
+        st[].has_ended = True
+
+    # ===--------------------------------------------------------------------===
     # Profile zone creation
     # ===--------------------------------------------------------------------===
 
@@ -90,9 +131,11 @@ struct Profiler[
         Returns:
             Linear profile zone handle.
         """
-        # var loc = call_location()  # TODO: Use it also
+        # Keep this runtime-bound for the same reason as the automatic-site
+        # overload below: a comptime binding loses the caller location.
+        var loc = call_location()
         var st = Self._core_state()
-        return _open_zone[name](st, index + 1)
+        return _open_zone[name](st, index + 1, loc)
 
     @always_inline
     @staticmethod
@@ -117,7 +160,7 @@ struct Profiler[
         var h = _site_hash(name_hash, loc)
         var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
         var idx = st[].registry.get_index(key^)
-        return _open_zone[name](UnsafePointer(to=st[].core), idx)
+        return _open_zone[name](UnsafePointer(to=st[].core), idx, loc)
 
     # ===--------------------------------------------------------------------===
     # Produce report
@@ -137,6 +180,8 @@ struct Profiler[
             raise Error(
                 String(t"report() called with {open_count} zone(s) still open")
             )
+        if not st[].has_ended:
+            raise Error("report() called before end()")
         var stats = List[ZoneStat[Self.I.MetricType]](
             capacity=len(st[].anchors)
         )
@@ -146,13 +191,13 @@ struct Profiler[
             stats.append(
                 ZoneStat[Self.I.MetricType](
                     a.label,
-                    # a.loc,
+                    a.loc,
                     a.hit_count,
                     a.inclusive.copy(),
                     a.exclusive.copy(),
                 )
             )
-        return Report[Self.I.MetricType](stats^)
+        return Report[Self.I.MetricType](st[].total_metric.copy(), stats^)
 
 
 @always_inline
@@ -161,11 +206,15 @@ def _open_zone[
 ](
     st: UnsafePointer[_CoreProfilerState[I, C], MutUntrackedOrigin],
     idx: Int,
+    loc: SourceLocation,
 ) -> _ProfileZone[I, C] where (C > 0):
     comptime assert label != UNCLAIMED_ANCHOR_LABEL, String(
         t"The semantic label of a profiling zone cannot be empty, i.e."
         t" ('{UNCLAIMED_ANCHOR_LABEL}')."
     )
+
+    if unlikely(not st[].has_started or st[].has_ended):
+        abort("profile zones must be opened between start() and end()")
 
     var parent = st[].current_open_idx
     var depth = st[].current_open_depth
@@ -182,6 +231,7 @@ def _open_zone[
     # TODO: Add more efficient comparison of static strings
     if unlikely(anchor.label == UNCLAIMED_ANCHOR_LABEL):
         anchor.label = label
+        anchor.loc = loc
 
     # We place the error condition behind an unlikely hint because it is,
     # and also if it is, we do not care about the performance.
