@@ -90,7 +90,7 @@ struct Profiler[
         Returns:
             Linear profile zone handle.
         """
-        comptime loc = call_location() # TODO: Use it also
+        # var loc = call_location()  # TODO: Use it also
         var st = Self._core_state()
         return _open_zone[name](st, index + 1)
 
@@ -108,7 +108,10 @@ struct Profiler[
         Returns:
             Linear profile zone handle.
         """
-        comptime loc = call_location()
+        # Must be a `var`: bound with `comptime`, `call_location()` evaluates
+        # in parameter context where the location is unknown (0:0), and every
+        # same-named site collapses into one anchor.
+        var loc = call_location()
         comptime name_hash = _hash_comp_time(name)
         var st = Self._state()
         var h = _site_hash(name_hash, loc)

@@ -130,6 +130,7 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
 @fieldwise_init
 struct Architecture(
     Equatable,
+    ImplicitlyCopyable,
     RegisterPassable,
     Writable,
 ):
