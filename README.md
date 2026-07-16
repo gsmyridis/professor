@@ -82,6 +82,8 @@ pixi run -e examples haversine-generate
 pixi run -e examples haversine-profile
 ```
 
+![Haversine profiler report with per-zone timings and color-coded percentages](assets/haversine-profile.png)
+
 ## Profile Zones
 
 ### Creating profilers
