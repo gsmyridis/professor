@@ -1,4 +1,4 @@
-from professor.measure import Measurer
+from professor.measure import Instrument
 from ._anchor import _Anchor
 from ._registry import _Registry
 
@@ -10,14 +10,14 @@ comptime CAPACITY_DEFAULT = 1024
 # ===------------------------------------------------------------------------===
 
 
-struct _CoreProfilerState[M: Measurer, Capacity: Int](
+struct _CoreProfilerState[I: Instrument, Capacity: Int](
     Defaultable, Movable
 ) where (Capacity > 0):
     # ===--------------------------------------------------------------------===
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime MetricType = Self.M.S
+    comptime MetricType = Self.I.MetricType
     """Profiling metric type."""
 
     comptime _AnchorArrayType = InlineArray[
@@ -28,7 +28,7 @@ struct _CoreProfilerState[M: Measurer, Capacity: Int](
     # Fields
     # ===--------------------------------------------------------------------===
 
-    var instrument: Self.M
+    var instrument: Self.I
     """Instrument that gives samples."""
 
     var anchors: Self._AnchorArrayType
@@ -47,7 +47,7 @@ struct _CoreProfilerState[M: Measurer, Capacity: Int](
 
     def __init__(out self):
         self.anchors = Self._AnchorArrayType(fill=_Anchor[Self.MetricType]())
-        self.instrument = Self.M()
+        self.instrument = Self.I()
         self.current_open_idx = ROOT_ANCHOR_INDEX
         self.current_open_depth = 0
 
@@ -57,12 +57,12 @@ struct _CoreProfilerState[M: Measurer, Capacity: Int](
 # ===------------------------------------------------------------------------===
 
 
-struct _ProfilerState[M: Measurer, Capacity: Int](Defaultable, Movable) where (
-    Capacity > 0
-):
-    var core: _CoreProfilerState[Self.M, Self.Capacity]
+struct _ProfilerState[I: Instrument, Capacity: Int](
+    Defaultable, Movable
+) where (Capacity > 0):
+    var core: _CoreProfilerState[Self.I, Self.Capacity]
     var registry: _Registry[Self.Capacity]
 
     def __init__(out self):
-        self.core = _CoreProfilerState[Self.M, Self.Capacity]()
+        self.core = _CoreProfilerState[Self.I, Self.Capacity]()
         self.registry = _Registry[Self.Capacity]()

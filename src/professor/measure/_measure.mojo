@@ -1,9 +1,9 @@
-trait Sample(Copyable, Defaultable, ImplicitlyDeletable, Writable):
+trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):
     """An absolute reading of some performance metric.
 
-    Sample readings are subtracted to get deltas and added to aggregate them.
+    Metric readings are subtracted to get deltas and added to aggregate them.
     Multiplication, division by a count, and `min`/`max` (all elementwise for
-    multi-valued samples) support online statistics: the profiler accumulates
+    multi-valued metrics) support online statistics: the profiler accumulates
     a sum and a sum of squares per zone, from which the report derives mean
     and variance. The `Defaultable` constructor must produce the zero reading.
     TODO: derive the implementation of the trait with reflection.
@@ -28,10 +28,11 @@ trait Sample(Copyable, Defaultable, ImplicitlyDeletable, Writable):
         ...
 
 
-trait Measurer(Defaultable, ImplicitlyDeletable, Movable):
-    """Produces `Sample`s on demand (wall clock, hardware counters, ...)."""
+trait Instrument(Defaultable, ImplicitlyDeletable, Movable):
+    """Produces `Metric` samples on demand (wall clock, hardware counters, ...).
+    """
 
-    comptime S: Sample
+    comptime MetricType: Metric
 
-    def measure(mut self) -> Self.S:
+    def measure(mut self) -> Self.MetricType:
         ...

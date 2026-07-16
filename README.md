@@ -85,7 +85,7 @@ pixi run -e examples haversine-profile
 
 ### Creating profilers
 
-`Profiler` is parameterized over a `Measurer` (the metric source), an optional
+`Profiler` is parameterized over an `Instrument` (the metric source), an optional
 zone `Capacity` (default 1024 zone sites), and an optional `Tag` that names
 its global state:
 
@@ -177,41 +177,41 @@ currently includes:
 transiently inconsistent while a zone is in flight. Min/max/mean/variance per
 zone are on the roadmap.
 
-### Custom metrics: `Measurer` and `Sample`
+### Custom metrics: `Instrument` and `Metric`
 
 Wall-clock time is the default metric, but any monotonically accumulating
-reading works. A metric source implements the `Measurer` trait, and its
-readings implement `Sample`:
+reading works. A metric source implements the `Instrument` trait, and its
+readings implement `Metric`:
 
 ```mojo
-from professor.measure import Measurer, Sample
+from professor.measure import Instrument, Metric
 
 
-struct MySample(Copyable, Defaultable, ImplicitlyDeletable, Sample):
+struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
     ...  # __sub__, __add__, __mul__, __truediv__, min, max, write_to
 
 
-struct MyMeasurer(Measurer):
-    comptime S = MySample
+struct MyInstrument(Instrument):
+    comptime MetricType = MyMetric
 
     def __init__(out self):
         ...
 
-    def measure(mut self) -> Self.S:
+    def measure(mut self) -> Self.MetricType:
         ...
 
 
-comptime MyProfiler = Profiler[MyMeasurer, Tag="custom"]
+comptime MyProfiler = Profiler[MyInstrument, Tag="custom"]
 ```
 
-Samples are subtracted to form deltas and added to aggregate them;
+Metric readings are subtracted to form deltas and added to aggregate them;
 multiplication, division by a count, and `min`/`max` exist so the profiler can
-maintain online statistics. Samples may be multi-valued — for example, a pair
+maintain online statistics. Readings may be multi-valued — for example, a pair
 of hardware counters — with all operations applied elementwise. The
 `Defaultable` constructor must produce the zero reading.
 
 One caveat: zone open and close are on the measurement's hot path and are
-non-raising. A `Measurer` that can fail (for example, one that talks to the
+non-raising. An `Instrument` that can fail (for example, one that talks to the
 OS) must handle or `abort` on errors inside `measure()` rather than raise.
 
 ## OS Performance Counters
@@ -497,7 +497,7 @@ window narrow, avoid I/O inside it, and sample repeatedly.
 
 The sampler works for standalone coarse measurements, but you can also feed
 counters into the instrumentation profiler by wrapping a `ThreadSampler` in a
-custom `Measurer` whose `Sample` carries, say, cycles and instructions per
+custom `Instrument` whose `Metric` carries, say, cycles and instructions per
 zone. The one constraint, as noted above, is that `measure()` is on the
 profiler's non-raising hot path, so kperf errors must abort rather than raise.
 A ready-made counter-backed measurer is on the roadmap.
@@ -508,9 +508,9 @@ Instrumentation profiler:
 
 - Richer reports: per-zone min/max/mean/variance, source locations, and
   bottleneck summaries.
-- A `TimestampCounter` measurer (cheap invariant TSC timing) next to
+- A `TimestampCounter` instrument (cheap invariant TSC timing) next to
   `WallClock`.
-- A ready-made hardware-counter `Measurer` for the Apple backend.
+- A ready-made hardware-counter `Instrument` for the Apple backend.
 - Eventually, decorator ergonomics as language support arrives:
 
   ```mojo

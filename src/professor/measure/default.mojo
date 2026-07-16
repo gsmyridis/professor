@@ -1,6 +1,6 @@
 from std.time import perf_counter_ns
 
-from ._measure import Sample, Measurer
+from ._measure import Instrument, Metric
 
 # ===----------------------------------------------------------------------=== #
 # Wall-clock measurer
@@ -8,7 +8,7 @@ from ._measure import Sample, Measurer
 
 
 @fieldwise_init
-struct Nanos(Defaultable, ImplicitlyCopyable, Sample):
+struct Nanos(Defaultable, ImplicitlyCopyable, Metric):
     """A wall-clock reading in nanoseconds.
 
     Products of `Nanos` (as accumulated for variance) are in squared
@@ -42,10 +42,10 @@ struct Nanos(Defaultable, ImplicitlyCopyable, Sample):
         writer.write(self.value, "ns")
 
 
-struct WallClock(Measurer):
-    """A `Measurer` that reads the monotonic wall clock."""
+struct WallClock(Instrument):
+    """An `Instrument` that reads the monotonic wall clock."""
 
-    comptime S = Nanos
+    comptime MetricType = Nanos
 
     def __init__(out self):
         pass
