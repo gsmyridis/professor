@@ -3,7 +3,7 @@ from std.ffi import c_int
 from professor.os.apple.config import ConfigBuilder
 from professor.os.apple.cpu import Cpu
 from professor.os.apple.database import Database
-from professor.os.apple.event import PortableEvent
+from professor.os.apple.event import Event
 from professor.os.apple.kperf import (
     force_all_ctrs_get,
     force_all_ctrs_set,
@@ -49,9 +49,10 @@ struct Sampler(Movable):
     def cpu(self) -> Cpu:
         return self._cpu
 
-    # TODO: Accept any event.
-    def thread(self, events: List[PortableEvent]) raises -> ThreadSampler:
-        """Creates a thread-local sampler for portable Apple Silicon events."""
+    def thread[
+        E: Event & Movable
+    ](self, events: List[E]) raises -> ThreadSampler:
+        """Creates a thread-local sampler for typed Apple Silicon events."""
         var builder = ConfigBuilder(self._db)
         builder.force_counters()
         for event in events:
