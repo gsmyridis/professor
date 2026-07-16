@@ -33,6 +33,21 @@ struct _ProfileZone[M: Measurer, C: Int] where C > 0:
     ]
     """Pointer to the global profiler state."""
 
+    @always_inline
+    def __enter__(self):
+        """Enters the zone's scope in a `with` statement.
+
+        The measurement interval starts when the zone is created, not here;
+        this only enables `with Prof.zone["name"]():` syntax.
+        """
+        pass
+
+    @always_inline
+    def __exit__(deinit self):
+        """Closes the zone when its `with` scope exits, including on the
+        unwind path of a raising body."""
+        self^.close()
+
     def close(deinit self):
         # Sample first so close-side bookkeeping stays out of the interval.
         var sample = self.prof_state[].instrument.measure()
