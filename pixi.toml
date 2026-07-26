@@ -12,8 +12,14 @@ version = "0.1.0"
 [tasks]
 format = "mojo format ."
 
+# Examples
+why-time = "mojo run -I src examples/why/main.mojo time"
+why-counters = "mojo run -I src examples/why/main.mojo counters"
+
 # Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
+test-linux-ffi-layout = "mojo run -I src tests/os/linux/ffi/test_perf_event_layout.mojo"
+test-linux-misc = "mojo run -I src tests/os/linux/test_misc.mojo"
 
 # Test OS
 test-apple = """
@@ -27,7 +33,7 @@ test-apple = """
 # Test Arch
 test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
 
-test = { depends-on = ["test-profile", "test-apple", "test-aarch64"] }
+test = { depends-on = ["test-profile", "test-linux-ffi-layout", "test-linux-misc", "test-apple", "test-aarch64"] }
 
 [dependencies]
 mojo = ">=1.0.0b3.dev2026070806,<2"

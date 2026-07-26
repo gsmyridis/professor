@@ -538,7 +538,9 @@ Backends:
 
 - Apple Silicon/macOS: `kperf`, KPC, and KPEP access to hardware performance
   counters. Implemented.
-- Linux: `perf_event_open` and perf events. Not implemented.
+- Linux: low-level `perf_event_open` counting FFI is implemented; the owned
+  counter backend is in progress. See
+  [`docs/linux-perf-event-status.md`](docs/linux-perf-event-status.md).
 - x86_64: `rdtsc`/`rdtscp` timing support. Not implemented.
 - AArch64: user-readable `*_EL0` counter registers where the OS enables them.
   Not implemented.
