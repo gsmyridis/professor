@@ -333,10 +333,17 @@ def _open_zone[
     ref anchor = st[].anchors[idx]
     var prev_inclusive = anchor.inclusive.copy()
 
+    # When opening a zone, if the zone is not claimed we set its label.
+    # Since we claim a zone only once, and every other time we use an
+    # existing one, we mark it as unlikely.
+    # TODO: Add more efficient comparison of static strings
     if unlikely(anchor.label == UNCLAIMED_ANCHOR_LABEL):
         anchor.label = label
         anchor.loc = loc
 
+    # We place the error condition behind an unlikely hint because it is,
+    # and also if it is, we do not care about the performance.
+    # TODO: Place it behind a comptime flag like CHECK
     if unlikely(anchor.label != label):
         abort(
             String(
