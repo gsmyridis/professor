@@ -1,83 +1,102 @@
-from std.reflection import SourceLocation
 from std.sys import stdout
+from std.time import perf_counter_ns
 
-from .measure import Metric
-from .report import Report, ZoneStat
-from .profile import ProfilerTrait
+from .measure import Instrument, Metric, MetricField
+from .report import Align, Cell, Column, Table, TableStyle
 
 
-struct _RepetitionAggregate[S: Metric]:
-    """Cumulative profiler statistics across independent repetitions."""
+struct RepetitionResults[M: Metric](Copyable):
+    """Statistics accumulated across completed repetitions."""
 
-    var total: Self.S
-    var zones: List[ZoneStat[Self.S]]
+    var test_count: Int
+    var total: Self.M
+    var minimum: Self.M
+    var maximum: Self.M
 
-    def __init__(out self):
-        self.total = Self.S()
-        self.zones = List[ZoneStat[Self.S]]()
+    def __init__(out self, sample: Self.M):
+        self.test_count = 1
+        self.total = sample.copy()
+        self.minimum = sample.copy()
+        self.maximum = sample.copy()
 
-    def observe(mut self, sample: Report[Self.S]) raises -> Bool:
-        """Merges one completed profiler session.
+    def average(self) -> Self.M:
+        return self.total / self.test_count
 
-        Returns `True` when any component of any zone's inclusive minimum
-        strictly improves, or when a zone is observed for the first time.
-        """
-        var improved = False
-        self.total = self.total + sample.total
-
-        for ref candidate in sample.zones:
-            _require_comparable(candidate.inclusive_min)
-            var index = self._find_zone(candidate)
-
-            if index == -1:
-                self.zones.append(candidate.copy())
-                improved = True
-                continue
-
-            ref best = self.zones[index]
-            if _has_improvement(best.inclusive_min, candidate.inclusive_min):
-                improved = True
-
-            best.count += candidate.count
-            best.inclusive = best.inclusive + candidate.inclusive
-            best.exclusive = best.exclusive + candidate.exclusive
-            best.inclusive_min = best.inclusive_min.min(candidate.inclusive_min)
-
+    def _observe(mut self, sample: Self.M) raises -> Bool:
+        var improved = _has_improvement(self.minimum, sample)
+        self.test_count += 1
+        self.total = self.total + sample
+        self.minimum = self.minimum.min(sample)
+        self.maximum = self.maximum.max(sample)
         return improved
 
-    def report(self) raises -> Report[Self.S]:
-        return Report[Self.S](self.total.copy(), self.zones.copy())
 
-    def _find_zone(self, candidate: ZoneStat[Self.S]) -> Int:
-        for i in range(len(self.zones)):
-            ref existing = self.zones[i]
-            if _same_site(
-                existing.name, existing.loc, candidate.name, candidate.loc
-            ):
-                return i
-        return -1
+struct RepetitionReport[M: Metric](Writable):
+    """Rendered result of a repetition test."""
+
+    var results: RepetitionResults[Self.M]
+    var _tables: List[Table]
+
+    def __init__(out self, var results: RepetitionResults[Self.M]) raises:
+        self._tables = _repetition_tables(results)
+        self.results = results^
+
+    def tables(self) -> List[Table]:
+        return self._tables.copy()
+
+    def write_to(self, mut writer: Some[Writer]):
+        for i in range(len(self._tables)):
+            if i > 0:
+                writer.write("\n")
+            self._tables[i].write_to(writer)
 
 
 struct _LiveReport:
     """Redraws reports in place on a terminal and prints once to a pipe."""
 
-    var _enabled: Bool
     var _is_terminal: Bool
     var _rendered_lines: Int
+    var _spinner_frame: Int
+    var _next_spinner_update_ns: Int
 
-    def __init__(out self, enabled: Bool):
-        self._enabled = enabled
-        self._is_terminal = enabled and stdout.isatty()
+    def __init__(out self):
+        self._is_terminal = stdout.isatty()
         self._rendered_lines = 0
+        self._spinner_frame = 0
+        self._next_spinner_update_ns = 0
 
-    def update[S: Metric](mut self, report: Report[S]):
+    def start(mut self):
+        if self._is_terminal:
+            self._redraw(self._spinner_line())
+
+    def update[M: Metric](mut self, results: RepetitionResults[M]) raises:
         if not self._is_terminal:
             return
-        self._redraw(String(report))
+        self._redraw(
+            String(RepetitionReport[M](results.copy())) + self._spinner_line()
+        )
 
-    def finish[S: Metric](mut self, report: Report[S]):
-        if not self._enabled:
+    def tick(mut self):
+        if not self._is_terminal:
             return
+
+        var now = Int(perf_counter_ns())
+        if now < self._next_spinner_update_ns:
+            return
+
+        # The cursor rests below the spinner after every live redraw.
+        print(
+            String("\033[1A\033[2K") + self._spinner_line(),
+            end="",
+        )
+
+    def cancel(mut self):
+        if self._is_terminal and self._rendered_lines:
+            print("\033[1A\033[2K", end="")
+            self._rendered_lines -= 1
+
+    def finish[M: Metric](mut self, results: RepetitionResults[M]) raises:
+        var report = RepetitionReport[M](results.copy())
         if self._is_terminal:
             self._redraw(String(report))
         else:
@@ -92,97 +111,150 @@ struct _LiveReport:
         print(text, end="")
         self._rendered_lines = len(text.splitlines())
 
+    def _spinner_line(mut self) -> String:
+        var frame = self._spinner_frame % 4
+        self._spinner_frame += 1
+        self._next_spinner_update_ns = Int(perf_counter_ns()) + 100_000_000
 
-struct RepetitionTester[
-    profiler: ProfilerTrait,
-    //,
-    function: def() thin raises -> None,
-    *,
-    reps: Int = 10,
-] where (
-    reps > 0
-):
-    """Runs a function until its profiled minima stop improving.
+        if frame == 0:
+            return "| Testing...\n"
+        if frame == 1:
+            return "/ Testing...\n"
+        if frame == 2:
+            return "- Testing...\n"
+        return "\\ Testing...\n"
 
-    `reps` is the number of consecutive repetitions without any new minimum
-    required to stop. `max_reps` optionally places a hard limit on the total
-    number of function invocations.
-    """
 
-    comptime MetricType = Self.profiler.MetricType
+struct RepetitionTester[I: Instrument, //]:
+    """Finds component-wise minima by repeatedly measuring one function."""
 
-    var _max_reps: Optional[Int]
-    var _print_results: Bool
+    comptime MetricType = Self.I.MetricType
+
+    var _instrument: Self.I
+    var _patience: Int
+    var _max_repetitions: Optional[Int]
 
     def __init__(
         out self,
-        max_reps: Optional[Int] = None,
-        *,
-        print_results: Bool = True,
+        var instrument: Self.I,
+        patience: Int = 10,
+        max_repetitions: Optional[Int] = 100,
     ) raises:
-        if max_reps and max_reps.value() <= 0:
-            raise Error("max_reps must be greater than zero")
-        self._max_reps = max_reps
-        self._print_results = print_results
+        if patience <= 0:
+            raise Error("patience must be greater than zero")
+        if max_repetitions and max_repetitions.value() <= 0:
+            raise Error("max_repetitions must be greater than zero")
 
-    def run(mut self) raises -> Report[Self.MetricType]:
-        var aggregate = _RepetitionAggregate[Self.MetricType]()
-        var renderer = _LiveReport(self._print_results)
-        var stale_reps = 0
-        var total_reps = 0
+        self._instrument = instrument^
+        self._patience = patience
+        self._max_repetitions = max_repetitions
 
-        while stale_reps < Self.reps and not self._reached_limit(total_reps):
-            var session_ended = False
-            Self.profiler.start()
+    def run[
+        function: def() thin raises -> None
+    ](mut self) raises -> RepetitionReport[Self.MetricType]:
+        """Measures `function` until its minima stop improving."""
+        var renderer = _LiveReport()
+        renderer.start()
+        try:
+            var first_sample = self._measure[function]()
+            var results = RepetitionResults[Self.MetricType](first_sample)
+            var stale_repetitions = 0
+            renderer.update(results)
 
-            try:
-                with Self.profiler.zone["repetition"]():
-                    Self.function()
-
-                Self.profiler.end()
-                session_ended = True
-                var sample = Self.profiler.report()
-                var improved = aggregate.observe(sample)
-                total_reps += 1
-
-                if improved:
-                    stale_reps = 0
-                    renderer.update(aggregate.report())
+            while (
+                stale_repetitions < self._patience
+                and not self._reached_limit(results.test_count)
+            ):
+                var sample = self._measure[function]()
+                if results._observe(sample):
+                    stale_repetitions = 0
+                    renderer.update(results)
                 else:
-                    stale_reps += 1
+                    stale_repetitions += 1
+                    renderer.tick()
 
-                Self.profiler.reset()
-            except error:
-                if not session_ended:
-                    Self.profiler.end()
-                Self.profiler.reset()
-                raise Error(String(t"error while repetition testing: {error}"))
+            renderer.finish(results)
+            return RepetitionReport[Self.MetricType](results^)
+        except:
+            renderer.cancel()
+            raise
 
-        var result = aggregate.report()
-        renderer.finish(result)
-        return aggregate.report()
+    def _measure[
+        function: def() thin raises -> None
+    ](mut self) raises -> Self.MetricType:
+        var start = self._instrument.measure()
+        try:
+            function()
+        except error:
+            raise Error(String(t"error while repetition testing: {error}"))
+        var end = self._instrument.measure()
+        var sample = end - start
+        _require_comparable(sample)
+        return sample^
 
-    def _reached_limit(self, total_reps: Int) -> Bool:
-        if self._max_reps:
-            return total_reps >= self._max_reps.value()
+    def _reached_limit(self, total_repetitions: Int) -> Bool:
+        if self._max_repetitions:
+            return total_repetitions >= self._max_repetitions.value()
         return False
 
 
-def _same_site(
-    lhs_name: StaticString,
-    lhs_loc: SourceLocation,
-    rhs_name: StaticString,
-    rhs_loc: SourceLocation,
-) -> Bool:
-    return (
-        lhs_name == rhs_name
-        and lhs_loc.file_name() == rhs_loc.file_name()
-        and lhs_loc.line() == rhs_loc.line()
-        and lhs_loc.column() == rhs_loc.column()
-    )
+def _repetition_tables[
+    M: Metric
+](results: RepetitionResults[M]) raises -> List[Table]:
+    var minimum = results.minimum.fields()
+    var maximum = results.maximum.fields()
+    var average = results.average().fields()
+    _check_shape(minimum, maximum)
+    _check_shape(minimum, average)
+
+    var tables = List[Table](capacity=len(minimum))
+    for i in range(len(minimum)):
+        var table = Table(
+            _title(minimum[i], results.test_count),
+            [
+                Column("Statistic"),
+                Column("Value", align=Align.RIGHT),
+            ],
+            TableStyle(),
+        )
+        table.add_row(
+            [
+                Cell("Minimum"),
+                Cell(minimum[i].value.copy()),
+            ]
+        )
+        table.add_row(
+            [
+                Cell("Maximum"),
+                Cell(maximum[i].value.copy()),
+            ]
+        )
+        table.add_row(
+            [
+                Cell("Average"),
+                Cell(average[i].value.copy()),
+            ]
+        )
+        tables.append(table^)
+    return tables^
 
 
-def _require_comparable[S: Metric](metric: S) raises:
+def _title(field: MetricField, repetitions: Int) -> String:
+    var noun = "repetition" if repetitions == 1 else "repetitions"
+    if field.name:
+        return String(t"{field.name} — {repetitions} {noun}")
+    return String(t"Repetition results — {repetitions} {noun}")
+
+
+def _check_shape(lhs: List[MetricField], rhs: List[MetricField]) raises:
+    if len(lhs) != len(rhs):
+        raise Error("metric field count changed between repetition statistics")
+    for i in range(len(lhs)):
+        if lhs[i].name != rhs[i].name:
+            raise Error("metric field order changed between repetitions")
+
+
+def _require_comparable[M: Metric](metric: M) raises:
     var fields = metric.fields()
     for ref field in fields:
         if not field.scalar:
@@ -193,18 +265,15 @@ def _require_comparable[S: Metric](metric: S) raises:
             )
 
 
-def _has_improvement[S: Metric](best: S, candidate: S) raises -> Bool:
+def _has_improvement[M: Metric](best: M, candidate: M) raises -> Bool:
     var best_fields = best.fields()
     var candidate_fields = candidate.fields()
-    if len(best_fields) != len(candidate_fields):
-        raise Error("metric field count changed between repetitions")
+    _check_shape(best_fields, candidate_fields)
 
     var improved = False
     for i in range(len(best_fields)):
         ref best_field = best_fields[i]
         ref candidate_field = candidate_fields[i]
-        if best_field.name != candidate_field.name:
-            raise Error("metric field order changed between repetitions")
         if not best_field.scalar or not candidate_field.scalar:
             raise Error("repetition testing requires scalar metric fields")
         if candidate_field.scalar.value() < best_field.scalar.value():

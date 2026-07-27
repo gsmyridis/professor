@@ -35,9 +35,10 @@ cache misses, branch behavior, retired instructions, and more.
 ## Quick Start
 
 ```mojo
-from professor import Profiler, WallClock
+from professor import GlobalProfiler
+from professor.measure.default import WallClock
 
-comptime Prof = Profiler[WallClock]
+comptime Prof = GlobalProfiler[WallClock]
 
 def parse(input: String) -> Int:
     with Prof.zone["parse"]():
@@ -85,16 +86,13 @@ pixi run -e examples haversine-profile
 
 ## Repetition Testing
 
-`RepetitionTester` repeatedly profiles one top-level function and stops after a
-configured number of consecutive runs produce no new inclusive minimum in any
-metric component:
+`RepetitionTester` repeatedly measures one top-level function and stops after a
+configured number of consecutive runs produce no new minimum in any metric
+component:
 
 ```mojo
-from professor import Profiler, RepetitionTester
+from professor import RepetitionTester
 from professor.measure.default import WallClock
-
-
-comptime Prof = Profiler[WallClock, Tag="read-test"]
 
 
 def read_file() raises:
@@ -102,55 +100,56 @@ def read_file() raises:
 
 
 def main() raises:
-    var tester = RepetitionTester[
-        profiler=Prof,
-        function=read_file,
-        reps=10,
-    ](max_reps=1_000)
-    _ = tester.run()
+    var tester = RepetitionTester(
+        WallClock(),
+        patience=10,
+        max_repetitions=1_000,
+    )
+    _ = tester.run[read_file]()
 ```
 
-Here `reps=10` means ten consecutive repetitions without improvement, not ten
-total repetitions. `max_reps` is an optional hard limit. The tester owns each
-profiling session: it starts the profiler, runs the function inside an overall
-`repetition` zone, ends and reports the session, then resets its measurements
-before the next run. Zone registration and the instrument itself survive the
-reset.
+Here `patience=10` means ten consecutive repetitions without improvement,
+not ten total repetitions. `max_repetitions` is an optional hard limit. The
+tester owns the instrument, samples it immediately before and after the
+function, then updates the component-wise minimum, maximum, and average.
 
 On a terminal, a new minimum redraws the report in place. Redirected output
-receives only the final report. `run()` also returns that cumulative `Report`;
-pass `print_results=False` when only the programmatic result is needed.
+receives only the final report. `run()` also returns a `RepetitionReport`.
 
 ## Profile Zones
 
 ### Creating profilers
 
-`Profiler` is parameterized over an `Instrument` (the metric source), an optional
-zone `Capacity` (default 1024 zone sites), and an optional `Tag` that names
-its global state:
+`Profiler` is a runtime value that owns its instrument, measurements, and zone
+registry. Separate values are independent, even when they have the same type:
 
 ```mojo
 from professor.profile import Profiler
 from professor.measure.default import WallClock
 
-comptime ParsingProfiler = Profiler[WallClock, Tag="parse"]
-comptime ComputeProfiler = Profiler[WallClock, Tag="compute", Capacity=16]
+var parsing_profiler = Profiler[WallClock]()
+var compute_profiler = Profiler[WallClock, Capacity=16]()
 ```
 
-Defining your own profiler aliases makes it straightforward to run several
-independent profilers at once, targeting different parts of the program,
-potentially with different metrics.
-Profilers with the same `Tag` (and parameters) share state; the default tag is `"default"`.
+Pass an instrument to initialize a profiler with runtime configuration:
+
+```mojo
+var profiler = Profiler[MyInstrument](MyInstrument(config))
+```
+
+Use `GlobalProfiler` when zones spread across functions or modules and should
+write into one program-wide profiler. It is a static facade over a globally
+stored `Profiler`; `Tag` distinguishes global instances.
 
 Conventionally you declare your profilers once, in a `profile.mojo` file, and
 import them wherever you instrument:
 
 ```mojo
 # profile.mojo
-from professor.profile import Profiler
+from professor.profile import GlobalProfiler
 from professor.measure.default import WallClock
 
-comptime MyProfiler = Profiler[WallClock]
+comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
 ```
 
 ```mojo
@@ -270,6 +269,7 @@ readings implement `Metric`:
 
 ```mojo
 from professor.measure import Instrument, Metric
+from professor.profile import Profiler
 
 
 struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
@@ -286,7 +286,7 @@ struct MyInstrument(Instrument):
         ...
 
 
-comptime MyProfiler = Profiler[MyInstrument, Tag="custom"]
+var profiler = Profiler[MyInstrument](MyInstrument())
 ```
 
 Metric readings are subtracted to form deltas and added to aggregate them;

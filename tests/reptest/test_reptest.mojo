@@ -1,10 +1,9 @@
-from std.testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, TestSuite
 
 from professor import (
     Instrument,
     Metric,
     MetricField,
-    Profiler,
     RepetitionTester,
 )
 
@@ -59,7 +58,7 @@ struct PairMetric(Defaultable, ImplicitlyCopyable, Metric):
 
 
 struct RepetitionInstrument(Instrument):
-    """Produces wrapper spans (5, 5), then (5, 4) for every later run."""
+    """Produces spans (5, 5), then (5, 4) for every later run."""
 
     comptime MetricType = PairMetric
 
@@ -71,22 +70,15 @@ struct RepetitionInstrument(Instrument):
         self.now = PairMetric()
 
     def measure(mut self) -> PairMetric:
-        var phase = self.calls % 4
-        var repetition = self.calls // 4
+        var phase = self.calls % 2
+        var repetition = self.calls // 2
         self.calls += 1
 
-        # Each repetition samples start, wrapper-open, wrapper-close, end.
-        if phase == 2:
+        # Each repetition samples immediately before and after the function.
+        if phase == 1:
             self.now.cycles += 5
             self.now.instructions += 5 if repetition == 0 else 4
         return self.now
-
-
-comptime PatienceProf = Profiler[
-    RepetitionInstrument, Tag="test.reptest.patience"
-]
-comptime LimitProf = Profiler[RepetitionInstrument, Tag="test.reptest.limit"]
-comptime ErrorProf = Profiler[RepetitionInstrument, Tag="test.reptest.error"]
 
 
 def do_nothing() raises:
@@ -98,51 +90,72 @@ def fail() raises:
 
 
 def test_any_component_improvement_resets_patience() raises:
-    var tester = RepetitionTester[
-        profiler=PatienceProf,
-        function=do_nothing,
-        reps=2,
-    ](print_results=False)
+    var tester = RepetitionTester(
+        RepetitionInstrument(),
+        patience=2,
+    )
 
-    var report = tester.run()
-    assert_equal(len(report.zones), 1)
-    assert_equal(report.zones[0].count, 4)
-    assert_equal(report.zones[0].inclusive_min.cycles, 5)
-    assert_equal(report.zones[0].inclusive_min.instructions, 4)
-
-
-def test_max_reps_places_a_hard_limit() raises:
-    var tester = RepetitionTester[
-        profiler=LimitProf,
-        function=do_nothing,
-        reps=10,
-    ](max_reps=2, print_results=False)
-
-    var report = tester.run()
-    assert_equal(report.zones[0].count, 2)
+    var report = tester.run[do_nothing]()
+    assert_equal(report.results.test_count, 4)
+    assert_equal(report.results.minimum.cycles, 5)
+    assert_equal(report.results.minimum.instructions, 4)
+    assert_equal(report.results.maximum.cycles, 5)
+    assert_equal(report.results.maximum.instructions, 5)
+    assert_equal(report.results.average().cycles, 5)
+    assert_equal(report.results.average().instructions, 4)
 
 
-def test_invalid_max_reps_raises() raises:
+def test_max_repetitions_places_a_hard_limit() raises:
+    var tester = RepetitionTester(
+        RepetitionInstrument(),
+        patience=10,
+        max_repetitions=2,
+    )
+
+    var report = tester.run[do_nothing]()
+    assert_equal(report.results.test_count, 2)
+
+
+def test_invalid_max_repetitions_raises() raises:
     with assert_raises(contains="greater than zero"):
-        _ = RepetitionTester[
-            profiler=LimitProf,
-            function=do_nothing,
-        ](max_reps=0)
+        _ = RepetitionTester(
+            RepetitionInstrument(),
+            max_repetitions=0,
+        )
 
 
-def test_function_error_resets_profiler_before_propagating() raises:
-    var tester = RepetitionTester[
-        profiler=ErrorProf,
-        function=fail,
-    ](print_results=False)
+def test_invalid_patience_raises() raises:
+    with assert_raises(contains="greater than zero"):
+        _ = RepetitionTester(
+            RepetitionInstrument(),
+            patience=0,
+        )
+
+
+def test_function_error_does_not_poison_tester() raises:
+    var tester = RepetitionTester(RepetitionInstrument())
 
     with assert_raises(contains="test failure"):
-        _ = tester.run()
+        _ = tester.run[fail]()
 
-    ErrorProf.start()
-    ErrorProf.end()
-    ErrorProf.reset()
-    assert_true(True)
+    # The instrument remains usable after the function propagates an error.
+    with assert_raises(contains="test failure"):
+        _ = tester.run[fail]()
+
+
+def test_report_renders_each_metric_component() raises:
+    var tester = RepetitionTester(
+        RepetitionInstrument(),
+        patience=1,
+        max_repetitions=2,
+    )
+
+    var text = String(tester.run[do_nothing]())
+    assert_equal(text.find("cycles — 2 repetitions") >= 0, True)
+    assert_equal(text.find("instructions — 2 repetitions") >= 0, True)
+    assert_equal(text.find("Minimum") >= 0, True)
+    assert_equal(text.find("Maximum") >= 0, True)
+    assert_equal(text.find("Average") >= 0, True)
 
 
 def main() raises:

@@ -1,52 +1,25 @@
 from std.ffi import _Global
+from std.memory import OwnedPointer
 from std.os import abort
-from std.sys.intrinsics import unlikely
 from std.reflection import call_location, SourceLocation
+from std.sys.intrinsics import unlikely
 
-from professor.measure import Instrument, Metric
+from professor.measure import Instrument
 from professor.report import Report, ZoneStat
 
-from ._anchor import _Anchor
+from ._consts import UNCLAIMED_ANCHOR_LABEL
+from ._registry import _SiteKey, _hash_comp_time, _site_hash
 from ._state import (
     ROOT_ANCHOR_INDEX,
     _ProfilerState,
     _CoreProfilerState,
     CAPACITY_DEFAULT,
 )
-from ._zone import _ProfileZone, ProfileZoneTrait
-from ._consts import UNCLAIMED_ANCHOR_LABEL
-from ._registry import _SiteKey, _hash_comp_time, _site_hash
-
-
-trait ProfilerTrait:
-    """Compile-time interface implemented by profiler types."""
-
-    comptime MetricType: Metric
-    comptime ZoneType: ProfileZoneTrait
-
-    @staticmethod
-    def start() raises:
-        ...
-
-    @staticmethod
-    def end() raises:
-        ...
-
-    @staticmethod
-    def reset() raises:
-        ...
-
-    @staticmethod
-    def report() raises -> Report[Self.MetricType]:
-        ...
-
-    @staticmethod
-    def zone[name: StaticString]() -> Self.ZoneType:
-        ...
+from ._zone import _ProfileZone
 
 
 # ===------------------------------------------------------------------------===
-# Profiler
+# Runtime profiler
 # ===------------------------------------------------------------------------===
 
 
@@ -54,12 +27,13 @@ struct Profiler[
     I: Instrument,
     *,
     Capacity: Int = CAPACITY_DEFAULT,
-    Tag: StaticString = "default",
-](ProfilerTrait) where (
+](Movable) where (
     Capacity > 0
 ):
+    """An independently owned profiler initialized at runtime."""
+
     # ===--------------------------------------------------------------------===
-    # Aliases
+    # Comptime aliases
     # ===--------------------------------------------------------------------===
 
     comptime _ProfilerStateType = _ProfilerState[Self.I, Self.Capacity]
@@ -67,45 +41,51 @@ struct Profiler[
     comptime _CoreProfilerStateType = _CoreProfilerState[Self.I, Self.Capacity]
 
     comptime MetricType = Self.I.MetricType
-    comptime ZoneType = _ProfileZone[Self.I, Self.Capacity]
-
-    comptime _global_state = _Global[Self.Tag, Self._init]
-    """Global profiler state."""
 
     # ===--------------------------------------------------------------------===
-    # Aliases
+    # Fields
     # ===--------------------------------------------------------------------===
 
-    @staticmethod
-    def _init() -> Self._ProfilerStateType:
-        """Constructs the profiler state."""
-        return Self._ProfilerStateType()
+    var _storage: OwnedPointer[Self._ProfilerStateType]
+    """The profiler state. It is stored on the heap so that the profiler is
+    small and cheap to move.
+    """
 
-    @staticmethod
-    def _state() -> UnsafePointer[Self._ProfilerStateType, MutUntrackedOrigin]:
-        """Returns an unsafe pointer to the profiler state."""
-        try:
-            return Self._global_state.get_or_create_ptr()
-        except e:
-            abort("failed to get or create global state pointer")
+    # ===--------------------------------------------------------------------===
+    # Lifecycle methods
+    # ===--------------------------------------------------------------------===
 
-    @staticmethod
+    def __init__(out self):
+        self._storage = OwnedPointer(Self._ProfilerStateType())
+
+    def __init__(out self, var instrument: Self.I):
+        self._storage = OwnedPointer(Self._ProfilerStateType(instrument^))
+
+    # ===--------------------------------------------------------------------===
+    # Profiler state access methods
+    # ===--------------------------------------------------------------------===
+
     @always_inline
-    def _core_state() -> (
-        UnsafePointer[Self._CoreProfilerStateType, MutUntrackedOrigin]
-    ):
-        """Returns an unsafe pointer to the core profiler state."""
-        var state = Self._state()
-        return UnsafePointer(to=state[].core)
+    def _state[
+        mut: Bool, origin: Origin[mut=mut], //
+    ](ref[origin] self) -> UnsafePointer[Self._ProfilerStateType, origin]:
+        return self._storage.unsafe_ptr().unsafe_origin_cast[origin]()
+
+    @always_inline
+    def _core_state[
+        mut: Bool, origin: Origin[mut=mut], //
+    ](ref[origin] self) -> UnsafePointer[Self._CoreProfilerStateType, origin]:
+        return UnsafePointer(to=self._state()[].core).unsafe_origin_cast[
+            origin
+        ]()
 
     # ===--------------------------------------------------------------------===
-    # Profiling session
+    # Profiling session methods
     # ===--------------------------------------------------------------------===
 
-    @staticmethod
-    def start() raises:
-        """Starts the program-wide profiling interval."""
-        var st = Self._core_state()
+    def start(mut self) raises:
+        """Starts this profiler's measurement interval."""
+        var st = self._core_state()
         if st[].has_started:
             raise Error("start() called more than once")
         if st[].current_open_depth != 0:
@@ -115,10 +95,9 @@ struct Profiler[
         st[].start_metric = st[].instrument.measure()
         st[].has_started = True
 
-    @staticmethod
-    def end() raises:
-        """Ends the profiling interval and computes the program total."""
-        var st = Self._core_state()
+    def end(mut self) raises:
+        """Ends this profiler's measurement interval."""
+        var st = self._core_state()
 
         # Measure as early as possible.
         var end_metric = st[].instrument.measure()
@@ -138,15 +117,9 @@ struct Profiler[
         st[].total_metric = end_metric - st[].start_metric
         st[].has_ended = True
 
-    @staticmethod
-    def reset() raises:
-        """Clears measurements so the profiler can start another session.
-
-        The instrument and site registry are preserved. This keeps automatic
-        zone identities stable and avoids repeating registration work across
-        otherwise independent profiling sessions.
-        """
-        var st = Self._core_state()
+    def reset(mut self) raises:
+        """Clears measurements while preserving the instrument and sites."""
+        var st = self._core_state()
         if st[].current_open_depth != 0:
             raise Error(
                 String(
@@ -171,68 +144,56 @@ struct Profiler[
     # ===--------------------------------------------------------------------===
 
     @always_inline
-    @staticmethod
     def zone[
-        name: StaticString, index: Int
-    ]() -> _ProfileZone[Self.I, Self.Capacity] where (
+        origin: MutOrigin, //, name: StaticString, index: Int
+    ](ref[origin] self) -> _ProfileZone[Self.I, Self.Capacity, origin] where (
         index >= ROOT_ANCHOR_INDEX and index < Self.Capacity
     ):
-        """Opens the zone `name` targeting the profile anchor with `index`.
-
-        The index is specified to bypass the runtime resolution of the target
-        anchor by semantic name and call-site resolution.
-
-        Parameters:
-            name: Semantic name of the profile zone.
-            index: Index of target profile anchor.
-
-        Returns:
-            Linear profile zone handle.
-        """
-        # Keep this runtime-bound for the same reason as the automatic-site
-        # overload below: a comptime binding loses the caller location.
+        """Opens a zone targeting an explicitly selected anchor."""
         var loc = call_location()
-        var st = Self._core_state()
+        return self._zone_at[name, index](loc)
+
+    @always_inline
+    def zone[
+        origin: MutOrigin, //, name: StaticString
+    ](ref[origin] self) -> _ProfileZone[Self.I, Self.Capacity, origin]:
+        """Opens a zone resolved from its label and source location."""
+        var loc = call_location()
+        return self._zone_at[name](loc)
+
+    @always_inline
+    def _zone_at[
+        origin: MutOrigin, //, name: StaticString, index: Int
+    ](
+        ref[origin] self,
+        loc: SourceLocation,
+    ) -> _ProfileZone[
+        Self.I, Self.Capacity, origin
+    ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
+        var st = self._core_state()
         return _open_zone[name](st, index + 1, loc)
 
     @always_inline
-    @staticmethod
-    def zone[name: StaticString]() -> _ProfileZone[Self.I, Self.Capacity]:
-        """Opens the profile zone `name`.
-
-        The target profile anchor is resolved during runtime based on the
-        name of the zone and the call-location.
-
-        Parameters:
-            name: Semantic name of the profile zone.
-
-        Returns:
-            Linear profile zone handle.
-        """
-        # Must be a `var`: bound with `comptime`, `call_location()` evaluates
-        # in parameter context where the location is unknown (0:0), and every
-        # same-named site collapses into one anchor.
-        var loc = call_location()
+    def _zone_at[
+        origin: MutOrigin, //, name: StaticString
+    ](ref[origin] self, loc: SourceLocation) -> _ProfileZone[
+        Self.I, Self.Capacity, origin
+    ]:
         comptime name_hash = _hash_comp_time(name)
-        var st = Self._state()
+        var st = self._state()
         var h = _site_hash(name_hash, loc)
         var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
         var idx = st[].registry.get_index(key^)
-        return _open_zone[name](UnsafePointer(to=st[].core), idx, loc)
+        var core = UnsafePointer(to=st[].core).unsafe_origin_cast[origin]()
+        return _open_zone[name](core, idx, loc)
 
     # ===--------------------------------------------------------------------===
     # Produce report
     # ===--------------------------------------------------------------------===
 
-    @staticmethod
-    def report() raises -> Report[Self.I.MetricType]:
-        """Derives per-site statistics from the anchor table.
-
-        Raises if any zone is still open: exclusive times are transiently
-        inconsistent (children already subtracted, parent not yet added), so
-        a report taken now would be garbage.
-        """
-        var st = Self._core_state()
+    def report(self) raises -> Report[Self.I.MetricType]:
+        """Derives per-site statistics from the completed session."""
+        var st = self._core_state()
         var open_count = st[].current_open_depth
         if open_count != 0:
             raise Error(
@@ -259,14 +220,102 @@ struct Profiler[
         return Report[Self.I.MetricType](st[].total_metric.copy(), stats^)
 
 
+# ===------------------------------------------------------------------------===
+# Global profiler
+# ===------------------------------------------------------------------------===
+
+
+struct GlobalProfiler[
+    I: Instrument,
+    *,
+    Capacity: Int = CAPACITY_DEFAULT,
+    Tag: StaticString = "default",
+] where (
+    Capacity > 0
+):
+    """Static facade over one globally stored runtime profiler."""
+
+    # ===--------------------------------------------------------------------===
+    # Comptime aliases
+    # ===--------------------------------------------------------------------===
+
+    comptime ProfilerType = Profiler[Self.I, Capacity=Self.Capacity]
+
+    comptime MetricType = Self.I.MetricType
+
+    comptime _global_profiler = _Global[Self.Tag, Self._init]
+
+    # ===--------------------------------------------------------------------===
+    # Lifecycle methods
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    def _init() -> Self.ProfilerType:
+        return Self.ProfilerType()
+
+    # ===--------------------------------------------------------------------===
+    # Profiler state access methods
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    @always_inline
+    def _profiler() -> UnsafePointer[Self.ProfilerType, MutUntrackedOrigin]:
+        try:
+            return Self._global_profiler.get_or_create_ptr()
+        except:
+            abort("failed to get or create global profiler")
+
+    # ===--------------------------------------------------------------------===
+    # Profiling session methods
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    def start() raises:
+        Self._profiler()[].start()
+
+    @staticmethod
+    def end() raises:
+        Self._profiler()[].end()
+
+    @staticmethod
+    def reset() raises:
+        Self._profiler()[].reset()
+
+    @staticmethod
+    def report() raises -> Report[Self.MetricType]:
+        return Self._profiler()[].report()
+
+    @always_inline
+    @staticmethod
+    def zone[
+        name: StaticString, index: Int
+    ]() -> _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin] where (
+        index >= ROOT_ANCHOR_INDEX and index < Self.Capacity
+    ):
+        var loc = call_location()
+        return Self._profiler()[]._zone_at[name, index](loc)
+
+    @always_inline
+    @staticmethod
+    def zone[
+        name: StaticString
+    ]() -> _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]:
+        var loc = call_location()
+        return Self._profiler()[]._zone_at[name](loc)
+
+
 @always_inline
 def _open_zone[
-    I: Instrument, C: Int, //, label: StaticString
+    I: Instrument,
+    C: Int,
+    origin: MutOrigin,
+    //,
+    label: StaticString,
 ](
-    st: UnsafePointer[_CoreProfilerState[I, C], MutUntrackedOrigin],
+    st: UnsafePointer[_CoreProfilerState[I, C], origin],
     idx: Int,
     loc: SourceLocation,
-) -> _ProfileZone[I, C] where (C > 0):
+) -> _ProfileZone[I, C, origin] where (C > 0):
     comptime assert label != UNCLAIMED_ANCHOR_LABEL, String(
         t"The semantic label of a profiling zone cannot be empty, i.e."
         t" ('{UNCLAIMED_ANCHOR_LABEL}')."
@@ -284,18 +333,10 @@ def _open_zone[
     ref anchor = st[].anchors[idx]
     var prev_inclusive = anchor.inclusive.copy()
 
-    # When opening a zone, if the zone is not claimed we set its label.
-    # Since we claim a zone only once, and every other time we use an
-    # existing one, we mark it as unlikely.
-    # TODO: Add more efficient comparison of static strings
     if unlikely(anchor.label == UNCLAIMED_ANCHOR_LABEL):
         anchor.label = label
         anchor.loc = loc
 
-    # We place the error condition behind an unlikely hint because it is,
-    # and also if it is, we do not care about the performance.
-    # TODO: Add a message
-    # TODO: Place it behind a comptime flag like CHECK
     if unlikely(anchor.label != label):
         abort(
             String(
@@ -308,7 +349,7 @@ def _open_zone[
     # measured interval.
     var sample = st[].instrument.measure()
 
-    return _ProfileZone[I](
+    return _ProfileZone[I, C, origin](
         label,
         idx,
         parent,
