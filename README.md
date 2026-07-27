@@ -171,11 +171,11 @@ var zone = MyProfiler.zone["hot_loop", 3]()  # anchor index chosen by you
 Call `start()` before opening any zones and `end()` after the last zone closes.
 `report()` then returns a `Report` you can print or inspect. Printing writes the
 program total and an aligned table to standard output with the zone's semantic
-name, call site relative to the current working directory, hit count, inclusive
+name, call site relative to the project root, hit count, inclusive
 and exclusive metrics, inclusive metric per hit, and inclusive percentage of
-the program total. On a color terminal, only the percentage is colored: red at
-50% or above, yellow at 20% or above, and green below 20%. Redirected output
-stays plain text.
+the program total. On a color terminal the header is bold and the percentage is
+colored: red at 50% or above, yellow at 20% or above, and green below 20%.
+Redirected output stays plain text.
 
 For each zone the report currently includes:
 
@@ -193,6 +193,37 @@ metrics are transiently inconsistent while a zone is in flight. `report()`
 also requires a completed start/end interval. Min/max/mean/variance per zone
 are on the roadmap.
 
+### Multi-valued metrics
+
+A metric does not have to be a single number. When a reading decomposes into
+several components — cycles and retired instructions, say — the report prints
+one table per component, each titled with that component's program total:
+
+```text
+cycles — total 7000
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       3000       2000      3000    42.9%
+inner  main.mojo:56:28      1       1000       1000      1000    14.3%
+
+instructions — total 17500
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       7500       5000      7500    42.9%
+inner  main.mojo:56:28      1       2500       2500      2500    14.3%
+```
+
+Separate tables rather than stacked rows, because the interesting comparison
+is down a column — which zone dominates *this* metric — and the answer differs
+per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
+same. Each table can therefore also be read, and eventually sorted, along its
+own axis. Percentages are computed per component, each against the
+corresponding component of the program total.
+
+A metric with one component yields exactly one table, titled `Program total:`.
+
 ### Custom metrics: `Instrument` and `Metric`
 
 Wall-clock time is the default metric, but any monotonically accumulating
@@ -204,7 +235,7 @@ from professor.measure import Instrument, Metric
 
 
 struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
-    ...  # __sub__, __add__, __mul__, __truediv__, min, max, write_to
+    ...  # __sub__, __add__, __truediv__, min, max, write_to
 
 
 struct MyInstrument(Instrument):
@@ -225,6 +256,39 @@ multiplication, division by a count, and `min`/`max` exist so the profiler can
 maintain online statistics. Readings may be multi-valued — for example, a pair
 of hardware counters — with all operations applied elementwise. The
 `Defaultable` constructor must produce the zero reading.
+
+`write_to` and `scalar_value` are enough for a single-valued metric. A
+multi-valued one overrides `fields()` to name its components, which is what
+lets the report stack them:
+
+```mojo
+from professor.measure import MetricField
+
+
+struct Counters(Copyable, Defaultable, ImplicitlyDeletable, Metric):
+    var cycles: Int
+    var instructions: Int
+
+    ...
+
+    def fields(self) -> List[MetricField]:
+        return [
+            MetricField("cycles", String(self.cycles), Float64(self.cycles)),
+            MetricField(
+                "instructions",
+                String(self.instructions),
+                Float64(self.instructions),
+            ),
+        ]
+```
+
+Each `MetricField` carries a component name, the formatted value (unit
+included), and an optional scalar used for percentages — pass `None` for a
+component that should not be compared. The list must have the same length and
+the same order for every reading of a given metric type, including the
+default-constructed one. The default `fields()` returns a single anonymous
+component built from `write_to` and `scalar_value`, so existing metrics need
+no change.
 
 One caveat: zone open and close are on the measurement's hot path and are
 non-raising. An `Instrument` that can fail (for example, one that talks to the

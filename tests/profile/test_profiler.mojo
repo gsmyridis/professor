@@ -1,6 +1,7 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 from professor import Instrument, Metric, Profiler, Nanos
+from professor.report import ColorMode
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
@@ -33,9 +34,6 @@ struct OpaqueTicks(Defaultable, ImplicitlyCopyable, Metric):
 
     def __add__(self, other: Self) -> Self:
         return Self(self.value + other.value)
-
-    def __mul__(self, other: Self) -> Self:
-        return Self(self.value * other.value)
 
     def __truediv__(self, count: Int) -> Self:
         return Self(self.value // count)
@@ -91,7 +89,7 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Count") != -1)
     assert_true(table.find("Inclusive") != -1)
     assert_true(table.find("Exclusive") != -1)
-    assert_true(table.find("Time/iter") != -1)
+    assert_true(table.find("Per iter") != -1)
     assert_true(table.find("% Total") != -1)
     assert_true(table.find("Program total: 3ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
@@ -108,7 +106,16 @@ def test_custom_metric_uses_plain_table_values() raises:
         pass
     Prof.end()
 
-    var table = String(Prof.report())
+    # Force color on rather than leaving it to `ColorMode.AUTO`, which asks
+    # `stdout.isatty()` and so renders differently under a terminal than under
+    # a pipe. With the bold header off, any escape left in the output could
+    # only have come from the percent cell -- which is what this pins down: a
+    # metric with no scalar shows a plain `N/A`, never a colored one.
+    var tables = Prof.report().tables()
+    tables[0].style.color = ColorMode.ALWAYS
+    tables[0].style.header_bold = False
+
+    var table = String(tables[0])
     assert_true(table.find("Program total: 3 ticks") != -1)
     assert_true(table.find("opaque") != -1)
     assert_true(table.find("1 ticks") != -1)

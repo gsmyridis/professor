@@ -12,8 +12,16 @@ version = "0.1.0"
 [tasks]
 format = "mojo format ."
 
+# Hardware counters need elevated privileges: sudo pixi run example-counters
+example-counters = "mojo run -I src examples/counters/main.mojo"
+
 # Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
+
+test-report = """
+    mojo run -I src tests/report/test_table.mojo \
+    && mojo run -I src tests/report/test_report.mojo
+"""
 
 # Test OS
 test-apple = """
@@ -27,7 +35,12 @@ test-apple = """
 # Test Arch
 test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
 
-test = { depends-on = ["test-profile", "test-apple", "test-aarch64"] }
+test = { depends-on = [
+  "test-profile",
+  "test-report",
+  "test-apple",
+  "test-aarch64",
+] }
 
 [dependencies]
 mojo = ">=1.0.0b3.dev2026070806,<2"
