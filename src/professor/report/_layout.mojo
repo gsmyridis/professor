@@ -33,11 +33,6 @@ comptime _MANIFESTS: InlineArray[StaticString, 3] = [
 ]
 """Any of these marks the project root, whose prefix is stripped from sites."""
 
-comptime _SHAPE_ERROR = (
-    "Metric.fields() must return the same fields, with the same names and in"
-    " the same order, for every reading."
-)
-
 
 def zone_tables[
     S: Metric
@@ -172,11 +167,15 @@ def _check_shape(
     Names, not just counts: a reading that reorders its fields would keep the
     length and quietly hand every table another component's numbers.
     """
+    comptime SHAPE_ERROR = (
+        "Metric.fields() must return the same fields, with the same names and in"
+        " the same order, for every reading."
+    )
     if len(fields) != len(total_fields):
-        raise Error(_SHAPE_ERROR)
+        raise Error(SHAPE_ERROR)
     for i in range(len(fields)):
         if fields[i].name != total_fields[i].name:
-            raise Error(_SHAPE_ERROR)
+            raise Error(SHAPE_ERROR)
 
 
 def _percent_value(
