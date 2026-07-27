@@ -11,3 +11,4 @@ struct ZoneStat[S: Metric](Copyable, Movable):
     var count: Int
     var inclusive: Self.S
     var exclusive: Self.S
+    var inclusive_min: Self.S

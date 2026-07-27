@@ -75,6 +75,7 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_equal(rep.zones[0].count, 1)
     assert_equal(rep.zones[0].inclusive.value, 1)  # 2 - 1
     assert_equal(rep.zones[0].exclusive.value, 1)  # no children
+    assert_equal(rep.zones[0].inclusive_min.value, 1)
     assert_true(rep.zones[0].loc.line() > 0)
     assert_true(rep.zones[0].loc.column() > 0)
     assert_true(
@@ -89,8 +90,10 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Count") != -1)
     assert_true(table.find("Inclusive") != -1)
     assert_true(table.find("Exclusive") != -1)
-    assert_true(table.find("Per iter") != -1)
-    assert_true(table.find("% Total") != -1)
+    assert_true(table.find("Min. Inclusive") != -1)
+    assert_true(table.find("Inclusive/Iter") != -1)
+    assert_true(table.find("Inclusive (%)") != -1)
+    assert_true(table.find("Exclusive (%)") != -1)
     assert_true(table.find("Program total: 3ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
     assert_true(table.find("only") != -1)
@@ -144,8 +147,10 @@ def test_nested_exclusive_subtracts_child() raises:
         if z.name == "outer":
             outer_incl = z.inclusive.value
             outer_excl = z.exclusive.value
+            assert_equal(z.inclusive_min.value, 3)
         elif z.name == "inner":
             inner_incl = z.inclusive.value
+            assert_equal(z.inclusive_min.value, 1)
 
     assert_equal(outer_incl, 3)
     assert_equal(inner_incl, 1)
