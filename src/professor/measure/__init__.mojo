@@ -1,1 +1,1 @@
-from .instrument import Instrument, Metric
+from .instrument import Instrument, Metric, MetricField

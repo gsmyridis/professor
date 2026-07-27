@@ -91,7 +91,7 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Count") != -1)
     assert_true(table.find("Inclusive") != -1)
     assert_true(table.find("Exclusive") != -1)
-    assert_true(table.find("Time/iter") != -1)
+    assert_true(table.find("Per iter") != -1)
     assert_true(table.find("% Total") != -1)
     assert_true(table.find("Program total: 3ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)

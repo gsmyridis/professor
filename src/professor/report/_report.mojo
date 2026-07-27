@@ -1,7 +1,8 @@
 from professor.measure import Metric
 
+from ._layout import zone_tables
 from ._stat import ZoneStat
-from ._tabwriter import _TabWriter
+from ._table import Table
 
 
 struct Report[S: Metric](Writable):
@@ -16,6 +17,21 @@ struct Report[S: Metric](Writable):
         self.total = total^
         self.zones = zones^
 
+    def tables(self) -> List[Table]:
+        """Returns one table per metric component, for restyling before
+        rendering.
+
+        A single-valued metric yields one table; a metric that decomposes into
+        cycles and retired instructions yields two, each titled with that
+        component's program total. Printing the report renders these with the
+        default style; take them directly to change the column separator,
+        force colors on or off, or append rows of your own.
+        """
+        return zone_tables[Self.S](self.total, self.zones)
+
     def write_to(self, mut writer: Some[Writer]):
-        var table = _TabWriter[Self.S](self.total.copy(), self.zones.copy())
-        table.write_to(writer)
+        var tables = self.tables()
+        for i in range(len(tables)):
+            if i > 0:
+                writer.write("\n")
+            tables[i].write_to(writer)

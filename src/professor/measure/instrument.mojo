@@ -1,3 +1,26 @@
+struct MetricField(Copyable):
+    """One named component of a metric reading, ready to be tabulated."""
+
+    var name: String
+    """Component name, e.g. `"cycles"`. Empty for single-valued metrics."""
+
+    var value: String
+    """The component formatted for display, unit included."""
+
+    var scalar: Optional[Float64]
+    """Numeric value used for relative comparisons; `None` if incomparable."""
+
+    def __init__(
+        out self,
+        var name: String,
+        var value: String,
+        scalar: Optional[Float64] = None,
+    ):
+        self.name = name^
+        self.value = value^
+        self.scalar = scalar
+
+
 trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):
     """An absolute reading of some performance metric.
 
@@ -34,6 +57,20 @@ trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):
         appear in reports, but percentage columns show `N/A`.
         """
         return None
+
+    def fields(self) -> List[MetricField]:
+        """Decomposes this reading into the components a report tabulates.
+
+        Single-valued metrics keep the default: one anonymous field formatted
+        with `write_to` and compared with `scalar_value`. Multi-valued metrics
+        (hardware counters, say) override this to return one named field per
+        component; the report then stacks those components under each zone,
+        one row per component.
+
+        The field list must have the same length and the same order for every
+        reading of a given metric type, including the default-constructed one.
+        """
+        return [MetricField("", String(self), self.scalar_value())]
 
 
 trait Instrument(Defaultable, ImplicitlyDeletable, Movable):

@@ -173,9 +173,9 @@ Call `start()` before opening any zones and `end()` after the last zone closes.
 program total and an aligned table to standard output with the zone's semantic
 name, call site relative to the current working directory, hit count, inclusive
 and exclusive metrics, inclusive metric per hit, and inclusive percentage of
-the program total. On a color terminal, only the percentage is colored: red at
-50% or above, yellow at 20% or above, and green below 20%. Redirected output
-stays plain text.
+the program total. On a color terminal the header is bold and the percentage is
+colored: red at 50% or above, yellow at 20% or above, and green below 20%.
+Redirected output stays plain text.
 
 For each zone the report currently includes:
 
@@ -192,6 +192,82 @@ per-hit values, but show `N/A` for percentages.
 metrics are transiently inconsistent while a zone is in flight. `report()`
 also requires a completed start/end interval. Min/max/mean/variance per zone
 are on the roadmap.
+
+### Multi-valued metrics
+
+A metric does not have to be a single number. When a reading decomposes into
+several components — cycles and retired instructions, say — the report prints
+one table per component, each titled with that component's program total:
+
+```text
+cycles — total 7000
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       3000       2000      3000    42.9%
+inner  main.mojo:56:28      1       1000       1000      1000    14.3%
+
+instructions — total 17500
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       7500       5000      7500    42.9%
+inner  main.mojo:56:28      1       2500       2500      2500    14.3%
+```
+
+Separate tables rather than stacked rows, because the interesting comparison
+is down a column — which zone dominates *this* metric — and the answer differs
+per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
+same. Each table can therefore also be read, and eventually sorted, along its
+own axis. Percentages are computed per component, each against the
+corresponding component of the program total.
+
+A metric with one component yields exactly one table, titled `Program total:`.
+
+### Customising the table
+
+`Report.tables()` returns the per-zone tables — one per metric component —
+before they are rendered, so you can restyle or extend them instead of taking
+the default layout:
+
+```mojo
+var table = Prof.report().tables()[0].copy()
+table.style.gap = " │ "
+table.style.color = ColorMode.NEVER
+table.add_rule()
+table.add_text_row(["TOTAL", "", "", "450351000ns"])
+print(table)
+```
+
+`Table` is a standalone renderer — it is what the report is built from, but it
+knows nothing about profiling and is worth reaching for on its own:
+
+```mojo
+from professor.report import Align, Cell, Color, ColorMode, Column, Table
+
+var table = Table(
+    [
+        Column("Zone"),
+        Column("Count", align=Align.RIGHT),
+        Column("% Total", align=Align.RIGHT),
+    ]
+)
+table.add_text_row(["parse", "10", "12.5%"])
+table.add_row([Cell("compute"), Cell("3"), Cell("87.5%", color=Color.RED)])
+print(table)
+```
+
+Cells carry their own presentation — `color`, `bold`, and an `align` that
+overrides the column's — and columns carry a header, a default alignment, and
+an optional `min_width`. Setting `Table.title` prints a line above the header,
+which is how each component table is labelled. Column widths are derived from
+the content when the table is rendered, counting codepoints rather than bytes;
+the title is not counted, so a long one does not stretch the table. Color
+lives on the `Cell`, never inside its text, so escape sequences cannot corrupt
+the widths; `TableStyle.color` decides whether they are emitted at all
+(`AUTO`, the default, colors only when standard output is a terminal). Rows
+never carry trailing whitespace, and `add_rule()` / `add_blank()` insert
+separators.
 
 ### Custom metrics: `Instrument` and `Metric`
 
@@ -225,6 +301,39 @@ multiplication, division by a count, and `min`/`max` exist so the profiler can
 maintain online statistics. Readings may be multi-valued — for example, a pair
 of hardware counters — with all operations applied elementwise. The
 `Defaultable` constructor must produce the zero reading.
+
+`write_to` and `scalar_value` are enough for a single-valued metric. A
+multi-valued one overrides `fields()` to name its components, which is what
+lets the report stack them:
+
+```mojo
+from professor.measure import MetricField
+
+
+struct Counters(Copyable, Defaultable, ImplicitlyDeletable, Metric):
+    var cycles: Int
+    var instructions: Int
+
+    ...
+
+    def fields(self) -> List[MetricField]:
+        return [
+            MetricField("cycles", String(self.cycles), Float64(self.cycles)),
+            MetricField(
+                "instructions",
+                String(self.instructions),
+                Float64(self.instructions),
+            ),
+        ]
+```
+
+Each `MetricField` carries a component name, the formatted value (unit
+included), and an optional scalar used for percentages — pass `None` for a
+component that should not be compared. The list must have the same length and
+the same order for every reading of a given metric type, including the
+default-constructed one. The default `fields()` returns a single anonymous
+component built from `write_to` and `scalar_value`, so existing metrics need
+no change.
 
 One caveat: zone open and close are on the measurement's hot path and are
 non-raising. An `Instrument` that can fail (for example, one that talks to the
