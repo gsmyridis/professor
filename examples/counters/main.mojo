@@ -29,7 +29,7 @@ from std.math import sqrt
 from std.os import abort
 from std.time import perf_counter_ns, sleep
 
-from professor import Instrument, Metric, MetricField, Profiler
+from professor import Instrument, Metric, MetricField, GlobalProfiler
 from professor.os.apple import PortableEvent, Sampler, ThreadSampler
 
 
@@ -178,7 +178,7 @@ struct Pmu(Instrument):
             abort(String(t"could not read the hardware counters: {e}"))
 
 
-comptime Prof = Profiler[Pmu, Tag="counters"]
+comptime Prof = GlobalProfiler[Pmu, Tag="counters"]
 
 
 # ===----------------------------------------------------------------------=== #

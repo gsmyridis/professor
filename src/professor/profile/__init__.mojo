@@ -1,1 +1,1 @@
-from ._profiler import Profiler
+from ._profiler import GlobalProfiler, Profiler

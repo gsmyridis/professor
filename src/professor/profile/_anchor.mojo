@@ -28,3 +28,10 @@ struct _Anchor[M: Metric](Copyable, Defaultable):
         self.inclusive = Self.M()
         self.exclusive = Self.M()
         self.inclusive_min = Self.M()
+
+    def reset_measurements(mut self):
+        """Clears statistics while preserving the site's identity."""
+        self.hit_count = 0
+        self.inclusive = Self.M()
+        self.exclusive = Self.M()
+        self.inclusive_min = Self.M()

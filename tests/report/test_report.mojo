@@ -1,6 +1,13 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from professor import Instrument, Metric, MetricField, Nanos, Profiler, Report
+from professor import (
+    Instrument,
+    Metric,
+    MetricField,
+    Nanos,
+    GlobalProfiler,
+    Report,
+)
 from professor.report import Align, ColorMode
 
 
@@ -71,7 +78,7 @@ struct Ticker(Instrument):
         return Nanos(self.now)
 
 
-comptime MinimumProf = Profiler[Ticker, Tag="test.report.minimums"]
+comptime MinimumProf = GlobalProfiler[Ticker, Tag="test.report.minimums"]
 
 
 def _record_minimum_span(children: Int):
@@ -129,7 +136,7 @@ def _rows_under(text: String, title: String) raises -> List[String]:
 
 
 def test_scalar_metric_renders_a_single_table() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.report.scalar"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.report.scalar"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -178,7 +185,7 @@ def test_minimum_columns_render_registered_values() raises:
 
 
 def test_each_component_gets_its_own_table() raises:
-    comptime Prof = Profiler[FakePmu, Tag="test.report.vector"]
+    comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.vector"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -196,7 +203,7 @@ def test_each_component_gets_its_own_table() raises:
 
 
 def test_a_component_table_holds_only_its_own_values() raises:
-    comptime Prof = Profiler[FakePmu, Tag="test.report.vector-values"]
+    comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.vector-values"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -217,7 +224,7 @@ def test_a_component_table_holds_only_its_own_values() raises:
 
 
 def test_every_zone_appears_in_every_component_table() raises:
-    comptime Prof = Profiler[FakePmu, Tag="test.report.vector-zones"]
+    comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.vector-zones"]
 
     Prof.start()
     with Prof.zone["outer"]():
@@ -237,7 +244,7 @@ def test_every_zone_appears_in_every_component_table() raises:
 
 
 def test_percentages_are_computed_per_component() raises:
-    comptime Prof = Profiler[FakePmu, Tag="test.report.vector-percent"]
+    comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.vector-percent"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -258,7 +265,7 @@ def test_percentages_are_computed_per_component() raises:
 
 
 def test_report_tables_are_restylable() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.report.restyle"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.report.restyle"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -277,7 +284,7 @@ def test_report_tables_are_restylable() raises:
 
 
 def test_report_table_columns_are_inspectable() raises:
-    comptime Prof = Profiler[FakePmu, Tag="test.report.columns"]
+    comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.columns"]
 
     Prof.start()
     with Prof.zone["work"]():
@@ -296,7 +303,7 @@ def test_report_table_columns_are_inspectable() raises:
 
 
 def test_empty_report_says_so() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.report.empty"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.report.empty"]
 
     Prof.start()
     Prof.end()
