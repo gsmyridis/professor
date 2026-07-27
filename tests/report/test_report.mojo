@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
-from professor import Instrument, Metric, MetricField, Nanos, Profiler
+from professor import Instrument, Metric, MetricField, Nanos, Profiler, Report
 from professor.report import Align, ColorMode
 
 
@@ -71,6 +71,24 @@ struct Ticker(Instrument):
         return Nanos(self.now)
 
 
+def _plain[S: Metric](rep: Report[S]) raises -> String:
+    """Renders `rep` with color pinned off.
+
+    The default `ColorMode.AUTO` asks `stdout.isatty()`, so a report rendered
+    under a terminal carries escape sequences that the same report rendered
+    into a pipe does not. These tests assert on exact row text, so they must
+    not depend on how the suite was launched.
+    """
+    var out = String()
+    var tables = rep.tables()
+    for i in range(len(tables)):
+        if i > 0:
+            out += "\n"
+        tables[i].style.color = ColorMode.NEVER
+        out += String(tables[i])
+    return out^
+
+
 def _rows_under(text: String, title: String) raises -> List[String]:
     """Returns the zone rows of the table titled `title`."""
     var lines = text.splitlines()
@@ -107,7 +125,7 @@ def test_scalar_metric_renders_a_single_table() raises:
         pass
     Prof.end()
 
-    var out = String(Prof.report())
+    var out = _plain(Prof.report())
     assert_true(out.startswith("Program total: 3ns\n\n"))
     assert_equal(len(Prof.report().tables()), 1)
 
@@ -135,7 +153,7 @@ def test_each_component_gets_its_own_table() raises:
 
     # Four samples are taken (start, open, close, end), so the session spans
     # three steps: 300 cycles and 750 instructions.
-    var out = String(rep)
+    var out = _plain(rep)
     assert_true(out.startswith("cycles — total 300\n\n"))
     assert_true(out.find("instructions — total 750\n\n") != -1)
 
@@ -148,7 +166,7 @@ def test_a_component_table_holds_only_its_own_values() raises:
         pass
     Prof.end()
 
-    var out = String(Prof.report())
+    var out = _plain(Prof.report())
 
     var cycles = _rows_under(out, "cycles — total 300")
     assert_equal(len(cycles), 1)
@@ -173,7 +191,7 @@ def test_every_zone_appears_in_every_component_table() raises:
     var rep = Prof.report()
     assert_equal(len(rep.zones), 2)
 
-    var out = String(rep)
+    var out = _plain(rep)
     for table in rep.tables():
         var rows = _rows_under(out, table.title)
         assert_equal(len(rows), 2)
@@ -189,7 +207,7 @@ def test_percentages_are_computed_per_component() raises:
         pass
     Prof.end()
 
-    var out = String(Prof.report())
+    var out = _plain(Prof.report())
     # 100 of 300 cycles and 250 of 750 instructions: both a third.
     assert_true(_rows_under(out, "cycles — total 300")[0].endswith("33.3%"))
     assert_true(
@@ -242,7 +260,7 @@ def test_empty_report_says_so() raises:
     Prof.start()
     Prof.end()
 
-    var out = String(Prof.report())
+    var out = _plain(Prof.report())
     assert_true(out.find("(no zones recorded)") != -1)
 
 

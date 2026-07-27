@@ -9,6 +9,7 @@ and retired instructions, say) gets one table each, so every table can be read
 from professor.measure import Metric, MetricField
 from std.os.path import dirname
 from std.pathlib import cwd, Path
+from std.reflection import SourceLocation
 
 from ._stat import ZoneStat
 from ._table import Align, Cell, Color, Column, Table, TableStyle
@@ -64,7 +65,7 @@ def _component_table[
     S: Metric
 ](
     total_fields: List[MetricField],
-    zones: List[ZoneStat[S]],
+    stats: List[ZoneStat[S]],
     index: Int,
     root: String,
 ) raises -> Table:
@@ -82,10 +83,10 @@ def _component_table[
         TableStyle(),
     )
 
-    for ref zone in zones:
-        var inclusive = zone.inclusive.fields()
-        var exclusive = zone.exclusive.fields()
-        var per_iter = (zone.inclusive / zone.count).fields()
+    for ref stat in stats:
+        var inclusive = stat.inclusive.fields()
+        var exclusive = stat.exclusive.fields()
+        var per_iter = (stat.inclusive / stat.count).fields()
 
         _check_shape(inclusive, total_fields)
         _check_shape(exclusive, total_fields)
@@ -95,9 +96,9 @@ def _component_table[
             inclusive[index].scalar, total_fields[index].scalar
         )
         var cells = [
-            Cell(String(zone.name)),
-            Cell(_site(zone, root)),
-            Cell(String(zone.count)),
+            Cell(String(stat.name)),
+            Cell(_format_site(stat.loc, root)),
+            Cell(String(stat.count)),
             Cell(inclusive[index].value.copy()),
             Cell(exclusive[index].value.copy()),
             Cell(per_iter[index].value.copy()),
@@ -105,7 +106,7 @@ def _component_table[
         ]
         table.add_row(cells^)
 
-    if len(zones) == 0:
+    if len(stats) == 0:
         # A row carries one cell per column; the empty ones are not rendered,
         # so this reads as a single line under the header.
         var cells = List[Cell](capacity=table.num_columns())
@@ -150,8 +151,8 @@ def _project_root() raises -> String:
         directory = parent^
 
 
-def _site[S: Metric](zone: ZoneStat[S], root: String) -> String:
-    var file = String(zone.loc.file_name())
+def _format_site(loc: SourceLocation, root: String) -> String:
+    var file = String(loc.file_name())
     if file.startswith("./"):
         file = String(file[byte=2:])
 
@@ -160,7 +161,7 @@ def _site[S: Metric](zone: ZoneStat[S], root: String) -> String:
         if file.startswith(prefix):
             file = String(file[byte = prefix.byte_length() :])
 
-    return String(t"{file}:{zone.loc.line()}:{zone.loc.column()}")
+    return String(t"{file}:{loc.line()}:{loc.column()}")
 
 
 def _check_shape(
