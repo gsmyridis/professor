@@ -230,10 +230,10 @@ def test_report_table_columns_are_inspectable() raises:
     Prof.end()
 
     var tables = Prof.report().tables()
-    assert_equal(len(tables[0].columns), 7)
-    assert_equal(tables[0].columns[0].header, "Zone")
-    assert_equal(tables[0].columns[3].header, "Inclusive")
-    assert_true(tables[0].columns[3].align == Align.RIGHT)
+    assert_equal(tables[0].num_columns(), 7)
+    assert_equal(tables[0].column(0).header, "Zone")
+    assert_equal(tables[0].column(3).header, "Inclusive")
+    assert_true(tables[0].column(3).align == Align.RIGHT)
 
 
 def test_empty_report_says_so() raises:

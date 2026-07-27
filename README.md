@@ -171,7 +171,7 @@ var zone = MyProfiler.zone["hot_loop", 3]()  # anchor index chosen by you
 Call `start()` before opening any zones and `end()` after the last zone closes.
 `report()` then returns a `Report` you can print or inspect. Printing writes the
 program total and an aligned table to standard output with the zone's semantic
-name, call site relative to the current working directory, hit count, inclusive
+name, call site relative to the project root, hit count, inclusive
 and exclusive metrics, inclusive metric per hit, and inclusive percentage of
 the program total. On a color terminal the header is bold and the percentage is
 colored: red at 50% or above, yellow at 20% or above, and green below 20%.
@@ -223,51 +223,6 @@ own axis. Percentages are computed per component, each against the
 corresponding component of the program total.
 
 A metric with one component yields exactly one table, titled `Program total:`.
-
-### Customising the table
-
-`Report.tables()` returns the per-zone tables — one per metric component —
-before they are rendered, so you can restyle or extend them instead of taking
-the default layout:
-
-```mojo
-var table = Prof.report().tables()[0].copy()
-table.style.gap = " │ "
-table.style.color = ColorMode.NEVER
-table.add_rule()
-table.add_text_row(["TOTAL", "", "", "450351000ns"])
-print(table)
-```
-
-`Table` is a standalone renderer — it is what the report is built from, but it
-knows nothing about profiling and is worth reaching for on its own:
-
-```mojo
-from professor.report import Align, Cell, Color, ColorMode, Column, Table
-
-var table = Table(
-    [
-        Column("Zone"),
-        Column("Count", align=Align.RIGHT),
-        Column("% Total", align=Align.RIGHT),
-    ]
-)
-table.add_text_row(["parse", "10", "12.5%"])
-table.add_row([Cell("compute"), Cell("3"), Cell("87.5%", color=Color.RED)])
-print(table)
-```
-
-Cells carry their own presentation — `color`, `bold`, and an `align` that
-overrides the column's — and columns carry a header, a default alignment, and
-an optional `min_width`. Setting `Table.title` prints a line above the header,
-which is how each component table is labelled. Column widths are derived from
-the content when the table is rendered, counting codepoints rather than bytes;
-the title is not counted, so a long one does not stretch the table. Color
-lives on the `Cell`, never inside its text, so escape sequences cannot corrupt
-the widths; `TableStyle.color` decides whether they are emitted at all
-(`AUTO`, the default, colors only when standard output is a terminal). Rows
-never carry trailing whitespace, and `add_rule()` / `add_blank()` insert
-separators.
 
 ### Custom metrics: `Instrument` and `Metric`
 

@@ -14,7 +14,7 @@ from professor.report import (
 
 def _plain(var columns: List[Column]) -> Table:
     """Builds a table with colors disabled, so output is deterministic."""
-    var table = Table(columns^)
+    var table = Table(String(), columns^, TableStyle())
     table.style.color = ColorMode.NEVER
     return table^
 
@@ -101,10 +101,10 @@ def test_width_counts_codepoints_not_bytes() raises:
 # ===----------------------------------------------------------------------=== #
 
 
-def test_missing_trailing_cells_render_as_blanks() raises:
+def test_trailing_empty_cells_are_not_rendered() raises:
     var table = _plain([Column("AAA"), Column("BBB")])
     table.style.header_rule = False
-    table.add_text_row(["x"])
+    table.add_text_row(["x", ""])
     assert_equal(String(table), "AAA  BBB\nx\n")
 
 
@@ -191,7 +191,9 @@ def test_color_never_strips_escapes() raises:
 
 
 def test_color_always_wraps_only_the_text() raises:
-    var table = Table([Column("A", align=Align.RIGHT, min_width=3)])
+    var table = Table(
+        String(), [Column("A", align=Align.RIGHT, min_width=3)], TableStyle()
+    )
     table.style.color = ColorMode.ALWAYS
     table.style.show_header = False
     table.style.header_rule = False
@@ -202,7 +204,7 @@ def test_color_always_wraps_only_the_text() raises:
 
 
 def test_color_does_not_affect_column_width() raises:
-    var table = Table([Column("A")])
+    var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.ALWAYS
     var cells = [Cell("x", color=Color.GREEN, bold=True)]
     table.add_row(cells^)
@@ -210,7 +212,7 @@ def test_color_does_not_affect_column_width() raises:
 
 
 def test_default_color_emits_no_escape() raises:
-    var table = Table([Column("A")])
+    var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.ALWAYS
     table.style.header_bold = False
     table.add_text_row(["x"])
@@ -226,7 +228,7 @@ def test_writing_default_restores_the_terminal_color() raises:
 def test_bold_without_a_color_is_not_reset_before_the_text() raises:
     # DEFAULT is ANSI's reset, so emitting it after selecting bold would
     # cancel the bold.
-    var table = Table([Column("A")])
+    var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.ALWAYS
     table.style.show_header = False
     table.style.header_rule = False
@@ -236,14 +238,14 @@ def test_bold_without_a_color_is_not_reset_before_the_text() raises:
 
 
 def test_header_is_bold_by_default() raises:
-    var table = Table([Column("A")])
+    var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.ALWAYS
     table.style.header_rule = False
     assert_equal(String(table), "\033[1mA\033[0m\n")
 
 
 def test_header_bold_can_be_turned_off() raises:
-    var table = Table([Column("A")])
+    var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.ALWAYS
     table.style.header_rule = False
     table.style.header_bold = False

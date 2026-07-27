@@ -7,10 +7,11 @@ and retired instructions, say) gets one table each, so every table can be read
 """
 
 from professor.measure import Metric, MetricField
-from std.pathlib import cwd
+from std.os.path import dirname
+from std.pathlib import cwd, Path
 
 from ._stat import ZoneStat
-from ._table import Align, Cell, Color, Column, Table
+from ._table import Align, Cell, Color, Column, Table, TableStyle
 
 
 comptime _ZONE_LABEL = "Zone"
@@ -24,30 +25,34 @@ comptime _PERCENT_LABEL = "% Total"
 comptime _HOT_PERCENT = 50.0
 comptime _WARM_PERCENT = 20.0
 
+comptime _MANIFESTS: InlineArray[StaticString, 3] = [
+    "pixi.toml",
+    "uv.toml",
+    "pyproject.toml",
+]
+"""Any of these marks the project root, whose prefix is stripped from sites."""
 
-def zone_tables[S: Metric](total: S, zones: List[ZoneStat[S]]) -> List[Table]:
+comptime _SHAPE_ERROR = (
+    "Metric.fields() must return the same fields, with the same names and in"
+    " the same order, for every reading."
+)
+
+
+def zone_tables[
+    S: Metric
+](total: S, zones: List[ZoneStat[S]]) raises -> List[Table]:
     """Builds one per-zone table for each component of the metric.
 
     A single-valued metric yields exactly one table, titled with the program
     total.
     """
+    # The total's fields define the report's shape: one table per component,
+    # in the order the metric declares them. `Metric.fields()` requires every
+    # reading to agree; `_component_table` checks it as it reads them.
     var total_fields = total.fields()
-    for ref field in total_fields:
-        print(field.name, field.value, field.scalar)
-    print("--")
-
-    # `Metric.fields()` is documented to return a fixed-length list, but a
-    # metric that breaks it must not lose components: give every index that
-    # appears anywhere in the report a table of its own.
     var count = len(total_fields)
-    for ref zone in zones:
-        count = max(count, len(zone.inclusive.fields()))
 
-    var root = String()
-    try:
-        root = String(cwd())
-    except:
-        pass
+    var root = _project_root()
 
     var tables = List[Table](capacity=count)
     for index in range(count):
@@ -62,8 +67,9 @@ def _component_table[
     zones: List[ZoneStat[S]],
     index: Int,
     root: String,
-) -> Table:
+) raises -> Table:
     var table = Table(
+        _title(total_fields, index),
         [
             Column(_ZONE_LABEL),
             Column(_SITE_LABEL),
@@ -72,31 +78,40 @@ def _component_table[
             Column(_EXCLUSIVE_LABEL, align=Align.RIGHT),
             Column(_PER_ITER_LABEL, align=Align.RIGHT),
             Column(_PERCENT_LABEL, align=Align.RIGHT),
-        ]
+        ],
+        TableStyle(),
     )
-    table.title = _title(total_fields, index)
 
     for ref zone in zones:
         var inclusive = zone.inclusive.fields()
         var exclusive = zone.exclusive.fields()
         var per_iter = (zone.inclusive / zone.count).fields()
 
+        _check_shape(inclusive, total_fields)
+        _check_shape(exclusive, total_fields)
+        _check_shape(per_iter, total_fields)
+
         var percent = _percent_value(
-            _field_scalar(inclusive, index), _field_scalar(total_fields, index)
+            inclusive[index].scalar, total_fields[index].scalar
         )
         var cells = [
             Cell(String(zone.name)),
             Cell(_site(zone, root)),
             Cell(String(zone.count)),
-            Cell(_field_value(inclusive, index)),
-            Cell(_field_value(exclusive, index)),
-            Cell(_field_value(per_iter, index)),
+            Cell(inclusive[index].value.copy()),
+            Cell(exclusive[index].value.copy()),
+            Cell(per_iter[index].value.copy()),
             Cell(_format_percent(percent), color=_percent_color(percent)),
         ]
         table.add_row(cells^)
 
     if len(zones) == 0:
-        var cells = [Cell("(no zones recorded)")]
+        # A row carries one cell per column; the empty ones are not rendered,
+        # so this reads as a single line under the header.
+        var cells = List[Cell](capacity=table.num_columns())
+        cells.append(Cell("(no zones recorded)"))
+        for _ in range(table.num_columns() - 1):
+            cells.append(Cell(String()))
         table.add_row(cells^)
 
     return table^
@@ -104,9 +119,6 @@ def _component_table[
 
 def _title(total_fields: List[MetricField], index: Int) -> String:
     """Names the component and states its program-wide total."""
-    if index >= len(total_fields):
-        return String()
-
     ref field = total_fields[index]
     if field.name:
         return String(t"{field.name} — total {field.value}")
@@ -116,6 +128,26 @@ def _title(total_fields: List[MetricField], index: Int) -> String:
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
+
+
+def _project_root() raises -> String:
+    """Returns the directory holding a manifest, searching upwards from `cwd`.
+
+    Reported sites are written relative to it, so the report reads the same
+    however deep in the tree the program was started from. A program run
+    outside any project has no root to speak of: this returns an empty string
+    and sites keep their full path, which is unwieldy but not wrong.
+    """
+    var directory = String(cwd())
+    while True:
+        for manifest in _MANIFESTS:
+            if (Path(directory) / manifest).is_file():
+                return directory^
+        var parent = dirname(directory)
+        # `dirname` is its own fixed point at the filesystem root.
+        if parent == directory:
+            return String()
+        directory = parent^
 
 
 def _site[S: Metric](zone: ZoneStat[S], root: String) -> String:
@@ -131,17 +163,19 @@ def _site[S: Metric](zone: ZoneStat[S], root: String) -> String:
     return String(t"{file}:{zone.loc.line()}:{zone.loc.column()}")
 
 
-def _field_value(fields: List[MetricField], index: Int) -> String:
-    """Returns field `index`, or a placeholder if the metric is inconsistent."""
-    if index >= len(fields):
-        return String("N/A")
-    return fields[index].value.copy()
+def _check_shape(
+    fields: List[MetricField], total_fields: List[MetricField]
+) raises:
+    """Raises unless `fields` decomposes the way the program total does.
 
-
-def _field_scalar(fields: List[MetricField], index: Int) -> Optional[Float64]:
-    if index >= len(fields):
-        return None
-    return fields[index].scalar
+    Names, not just counts: a reading that reorders its fields would keep the
+    length and quietly hand every table another component's numbers.
+    """
+    if len(fields) != len(total_fields):
+        raise Error(_SHAPE_ERROR)
+    for i in range(len(fields)):
+        if fields[i].name != total_fields[i].name:
+            raise Error(_SHAPE_ERROR)
 
 
 def _percent_value(
