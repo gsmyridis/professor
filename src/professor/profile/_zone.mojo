@@ -5,9 +5,19 @@ from professor.measure import Instrument
 from ._state import _CoreProfilerState
 
 
+trait ProfileZoneTrait:
+    """Linear profile zone usable as a context manager."""
+
+    def __enter__(self):
+        ...
+
+    def __exit__(deinit self):
+        ...
+
+
 @fieldwise_init
 @explicit_destroy(".close()")
-struct _ProfileZone[I: Instrument, C: Int] where C > 0:
+struct _ProfileZone[I: Instrument, C: Int](ProfileZoneTrait) where C > 0:
     comptime MetricType = Self.I.MetricType
 
     var label: StaticString

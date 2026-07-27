@@ -3,7 +3,7 @@ from std.os import abort
 from std.sys.intrinsics import unlikely
 from std.reflection import call_location, SourceLocation
 
-from professor.measure import Instrument
+from professor.measure import Instrument, Metric
 from professor.report import Report, ZoneStat
 
 from ._anchor import _Anchor
@@ -13,9 +13,36 @@ from ._state import (
     _CoreProfilerState,
     CAPACITY_DEFAULT,
 )
-from ._zone import _ProfileZone
+from ._zone import _ProfileZone, ProfileZoneTrait
 from ._consts import UNCLAIMED_ANCHOR_LABEL
 from ._registry import _SiteKey, _hash_comp_time, _site_hash
+
+
+trait ProfilerTrait:
+    """Compile-time interface implemented by profiler types."""
+
+    comptime MetricType: Metric
+    comptime ZoneType: ProfileZoneTrait
+
+    @staticmethod
+    def start() raises:
+        ...
+
+    @staticmethod
+    def end() raises:
+        ...
+
+    @staticmethod
+    def reset() raises:
+        ...
+
+    @staticmethod
+    def report() raises -> Report[Self.MetricType]:
+        ...
+
+    @staticmethod
+    def zone[name: StaticString]() -> Self.ZoneType:
+        ...
 
 
 # ===------------------------------------------------------------------------===
@@ -28,7 +55,7 @@ struct Profiler[
     *,
     Capacity: Int = CAPACITY_DEFAULT,
     Tag: StaticString = "default",
-] where (
+](ProfilerTrait) where (
     Capacity > 0
 ):
     # ===--------------------------------------------------------------------===
@@ -38,6 +65,9 @@ struct Profiler[
     comptime _ProfilerStateType = _ProfilerState[Self.I, Self.Capacity]
 
     comptime _CoreProfilerStateType = _CoreProfilerState[Self.I, Self.Capacity]
+
+    comptime MetricType = Self.I.MetricType
+    comptime ZoneType = _ProfileZone[Self.I, Self.Capacity]
 
     comptime _global_state = _Global[Self.Tag, Self._init]
     """Global profiler state."""
@@ -107,6 +137,34 @@ struct Profiler[
 
         st[].total_metric = end_metric - st[].start_metric
         st[].has_ended = True
+
+    @staticmethod
+    def reset() raises:
+        """Clears measurements so the profiler can start another session.
+
+        The instrument and site registry are preserved. This keeps automatic
+        zone identities stable and avoids repeating registration work across
+        otherwise independent profiling sessions.
+        """
+        var st = Self._core_state()
+        if st[].current_open_depth != 0:
+            raise Error(
+                String(
+                    t"reset() called with {st[].current_open_depth} zone(s)"
+                    t" still open"
+                )
+            )
+        if st[].has_started and not st[].has_ended:
+            raise Error("reset() called before end()")
+
+        st[].start_metric = Self.I.MetricType()
+        st[].total_metric = Self.I.MetricType()
+        st[].has_started = False
+        st[].has_ended = False
+        st[].current_open_idx = ROOT_ANCHOR_INDEX
+
+        for ref anchor in st[].anchors:
+            anchor.reset_measurements()
 
     # ===--------------------------------------------------------------------===
     # Profile zone creation

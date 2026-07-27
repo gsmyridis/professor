@@ -367,6 +367,48 @@ def test_session_lifecycle_errors_are_reported() raises:
         Prof.end()
 
 
+comptime ResetProf = Profiler[Ticker, Tag="test.reset"]
+
+
+def _record_reset_zone():
+    with ResetProf.zone["reused"]():
+        pass
+
+
+def test_reset_starts_a_fresh_session_and_preserves_sites() raises:
+    ResetProf.start()
+    _record_reset_zone()
+    ResetProf.end()
+    assert_equal(ResetProf.report().zones[0].count, 1)
+
+    ResetProf.reset()
+    with assert_raises(contains="before end"):
+        _ = ResetProf.report()
+
+    ResetProf.start()
+    _record_reset_zone()
+    ResetProf.end()
+
+    var report = ResetProf.report()
+    assert_equal(len(report.zones), 1)
+    assert_true(report.zones[0].name == "reused")
+    assert_equal(report.zones[0].count, 1)
+
+
+def test_reset_rejects_an_active_session() raises:
+    comptime Prof = Profiler[Ticker, Tag="test.reset-active"]
+
+    Prof.start()
+    var raised = False
+    try:
+        Prof.reset()
+    except error:
+        raised = String(error).find("before end") != -1
+    assert_true(raised)
+    Prof.end()
+    Prof.reset()
+
+
 def test_report_is_repeatable() raises:
     comptime Prof = Profiler[Ticker, Tag="test.repeat"]
 

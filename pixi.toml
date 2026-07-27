@@ -23,6 +23,8 @@ test-report = """
     && mojo run -I src tests/report/test_report.mojo
 """
 
+test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
+
 # Test OS
 test-apple = """
     mojo run -I src tests/os/apple/test_cpu.mojo \
@@ -38,6 +40,7 @@ test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
 test = { depends-on = [
   "test-profile",
   "test-report",
+  "test-reptest",
   "test-apple",
   "test-aarch64",
 ] }

@@ -83,6 +83,44 @@ pixi run -e examples haversine-profile
 
 ![Haversine profiler report with per-zone timings and color-coded percentages](assets/haversine-profile.png)
 
+## Repetition Testing
+
+`RepetitionTester` repeatedly profiles one top-level function and stops after a
+configured number of consecutive runs produce no new inclusive minimum in any
+metric component:
+
+```mojo
+from professor import Profiler, RepetitionTester
+from professor.measure.default import WallClock
+
+
+comptime Prof = Profiler[WallClock, Tag="read-test"]
+
+
+def read_file() raises:
+    ...
+
+
+def main() raises:
+    var tester = RepetitionTester[
+        profiler=Prof,
+        function=read_file,
+        reps=10,
+    ](max_reps=1_000)
+    _ = tester.run()
+```
+
+Here `reps=10` means ten consecutive repetitions without improvement, not ten
+total repetitions. `max_reps` is an optional hard limit. The tester owns each
+profiling session: it starts the profiler, runs the function inside an overall
+`repetition` zone, ends and reports the session, then resets its measurements
+before the next run. Zone registration and the instrument itself survive the
+reset.
+
+On a terminal, a new minimum redraws the report in place. Redirected output
+receives only the final report. `run()` also returns that cumulative `Report`;
+pass `print_results=False` when only the programmatic result is needed.
+
 ## Profile Zones
 
 ### Creating profilers

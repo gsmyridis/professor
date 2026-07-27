@@ -1,4 +1,5 @@
-from .profile import Profiler
+from .profile import Profiler, ProfilerTrait, ProfileZoneTrait
+from .reptest import RepetitionTester
 from .measure import Instrument, Metric, MetricField
 from .measure.default import Nanos
 from .report import (
