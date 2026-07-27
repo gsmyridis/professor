@@ -20,8 +20,10 @@ comptime _SITE_LABEL = "Site"
 comptime _COUNT_LABEL = "Count"
 comptime _INCLUSIVE_LABEL = "Inclusive"
 comptime _EXCLUSIVE_LABEL = "Exclusive"
-comptime _PER_ITER_LABEL = "Per iter"
-comptime _PERCENT_LABEL = "% Total"
+comptime _INCLUSIVE_MIN_LABEL = "Min. Inclusive"
+comptime _INCLUSIVE_PER_ITER_LABEL = "Inclusive/Iter"
+comptime _INCLUSIVE_PERCENT_LABEL = "Inclusive (%)"
+comptime _EXCLUSIVE_PERCENT_LABEL = "Exclusive (%)"
 
 comptime _HOT_PERCENT = 50.0
 comptime _WARM_PERCENT = 20.0
@@ -72,8 +74,10 @@ def _component_table[
             Column(_COUNT_LABEL, align=Align.RIGHT),
             Column(_INCLUSIVE_LABEL, align=Align.RIGHT),
             Column(_EXCLUSIVE_LABEL, align=Align.RIGHT),
-            Column(_PER_ITER_LABEL, align=Align.RIGHT),
-            Column(_PERCENT_LABEL, align=Align.RIGHT),
+            Column(_INCLUSIVE_MIN_LABEL, align=Align.RIGHT),
+            Column(_INCLUSIVE_PER_ITER_LABEL, align=Align.RIGHT),
+            Column(_INCLUSIVE_PERCENT_LABEL, align=Align.RIGHT),
+            Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.RIGHT),
         ],
         TableStyle(),
     )
@@ -81,14 +85,19 @@ def _component_table[
     for ref stat in stats:
         var inclusive = stat.inclusive.fields()
         var exclusive = stat.exclusive.fields()
-        var per_iter = (stat.inclusive / stat.count).fields()
+        var inclusive_min = stat.inclusive_min.fields()
+        var inclusive_per_iter = (stat.inclusive / stat.count).fields()
 
         _check_shape(inclusive, total_fields)
         _check_shape(exclusive, total_fields)
-        _check_shape(per_iter, total_fields)
+        _check_shape(inclusive_min, total_fields)
+        _check_shape(inclusive_per_iter, total_fields)
 
-        var percent = _percent_value(
+        var incl_percent = _percent_value(
             inclusive[index].scalar, total_fields[index].scalar
+        )
+        var excl_percent = _percent_value(
+            exclusive[index].scalar, total_fields[index].scalar
         )
         var cells = [
             Cell(String(stat.name)),
@@ -96,8 +105,16 @@ def _component_table[
             Cell(String(stat.count)),
             Cell(inclusive[index].value.copy()),
             Cell(exclusive[index].value.copy()),
-            Cell(per_iter[index].value.copy()),
-            Cell(_format_percent(percent), color=_percent_color(percent)),
+            Cell(inclusive_min[index].value.copy()),
+            Cell(inclusive_per_iter[index].value.copy()),
+            Cell(
+                _format_percent(incl_percent),
+                color=_percent_color(incl_percent),
+            ),
+            Cell(
+                _format_percent(excl_percent),
+                color=_percent_color(excl_percent),
+            ),
         ]
         table.add_row(cells^)
 
@@ -168,8 +185,8 @@ def _check_shape(
     length and quietly hand every table another component's numbers.
     """
     comptime SHAPE_ERROR = (
-        "Metric.fields() must return the same fields, with the same names and in"
-        " the same order, for every reading."
+        "Metric.fields() must return the same fields, with the same names and"
+        " in the same order, for every reading."
     )
     if len(fields) != len(total_fields):
         raise Error(SHAPE_ERROR)

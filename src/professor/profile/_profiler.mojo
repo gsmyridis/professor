@@ -195,6 +195,7 @@ struct Profiler[
                     a.hit_count,
                     a.inclusive.copy(),
                     a.exclusive.copy(),
+                    a.inclusive_min.copy(),
                 )
             )
         return Report[Self.I.MetricType](st[].total_metric.copy(), stats^)
@@ -250,5 +251,11 @@ def _open_zone[
     var sample = st[].instrument.measure()
 
     return _ProfileZone[I](
-        label, idx, parent, depth, prev_inclusive^, sample^, st
+        label,
+        idx,
+        parent,
+        depth,
+        prev_inclusive^,
+        sample^,
+        st,
     )

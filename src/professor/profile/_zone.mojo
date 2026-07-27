@@ -63,6 +63,11 @@ struct _ProfileZone[I: Instrument, C: Int] where C > 0:
         anchor.exclusive = anchor.exclusive + delta
         anchor.inclusive = self.metric_inclusive_prev + delta
 
+        if unlikely(anchor.hit_count == 1):
+            anchor.inclusive_min = delta.copy()
+        else:
+            anchor.inclusive_min = anchor.inclusive_min.min(delta)
+
         # Account for recursive calls
         self.prof_state[].current_open_depth = self.depth
         self.prof_state[].current_open_idx = self.parent_index

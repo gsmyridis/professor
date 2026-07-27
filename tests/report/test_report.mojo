@@ -71,6 +71,17 @@ struct Ticker(Instrument):
         return Nanos(self.now)
 
 
+comptime MinimumProf = Profiler[Ticker, Tag="test.report.minimums"]
+
+
+def _record_minimum_span(children: Int):
+    var target = MinimumProf.zone["target"]()
+    for _ in range(children):
+        with MinimumProf.zone["child"]():
+            pass
+    target^.close()
+
+
 def _plain[S: Metric](rep: Report[S]) raises -> String:
     """Renders `rep` with color pinned off.
 
@@ -133,6 +144,32 @@ def test_scalar_metric_renders_a_single_table() raises:
     assert_equal(len(rows), 1)
     assert_true(rows[0].startswith("work"))
     assert_true(rows[0].find("1ns") != -1)
+
+
+def test_minimum_columns_render_registered_values() raises:
+    MinimumProf.start()
+    _record_minimum_span(3)
+    _record_minimum_span(1)
+    MinimumProf.end()
+
+    var rep = MinimumProf.report()
+    var table = rep.tables()[0].copy()
+    table.style.color = ColorMode.NEVER
+    table.style.gap = "|"
+
+    var target_row = String()
+    for line in String(table).splitlines():
+        if line.startswith("target"):
+            target_row = String(line)
+            break
+
+    var cells = target_row.split("|")
+    assert_equal(len(cells), 9)
+    assert_equal(String(cells[2].strip()), "2")
+    assert_equal(String(cells[3].strip()), "10ns")
+    assert_equal(String(cells[4].strip()), "6ns")
+    assert_equal(String(cells[5].strip()), "3ns")
+    assert_equal(String(cells[6].strip()), "5ns")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -248,9 +285,13 @@ def test_report_table_columns_are_inspectable() raises:
     Prof.end()
 
     var tables = Prof.report().tables()
-    assert_equal(tables[0].num_columns(), 7)
+    assert_equal(tables[0].num_columns(), 9)
     assert_equal(tables[0].column(0).header, "Zone")
     assert_equal(tables[0].column(3).header, "Inclusive")
+    assert_equal(tables[0].column(5).header, "Min. Inclusive")
+    assert_equal(tables[0].column(6).header, "Inclusive/Iter")
+    assert_equal(tables[0].column(7).header, "Inclusive (%)")
+    assert_equal(tables[0].column(8).header, "Exclusive (%)")
     assert_true(tables[0].column(3).align == Align.RIGHT)
 
 
