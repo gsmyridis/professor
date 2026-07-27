@@ -34,9 +34,6 @@ struct OpaqueTicks(Defaultable, ImplicitlyCopyable, Metric):
     def __add__(self, other: Self) -> Self:
         return Self(self.value + other.value)
 
-    def __mul__(self, other: Self) -> Self:
-        return Self(self.value * other.value)
-
     def __truediv__(self, count: Int) -> Self:
         return Self(self.value // count)
 

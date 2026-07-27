@@ -20,9 +20,6 @@ struct Counters(Defaultable, ImplicitlyCopyable, Metric):
     def __add__(self, o: Self) -> Self:
         return Self(self.cycles + o.cycles, self.instructions + o.instructions)
 
-    def __mul__(self, o: Self) -> Self:
-        return Self(self.cycles * o.cycles, self.instructions * o.instructions)
-
     def __truediv__(self, count: Int) -> Self:
         return Self(self.cycles // count, self.instructions // count)
 

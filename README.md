@@ -280,7 +280,7 @@ from professor.measure import Instrument, Metric
 
 
 struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
-    ...  # __sub__, __add__, __mul__, __truediv__, min, max, write_to
+    ...  # __sub__, __add__, __truediv__, min, max, write_to
 
 
 struct MyInstrument(Instrument):
