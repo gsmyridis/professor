@@ -1,2 +1,1 @@
-from ._profiler import Profiler, ProfilerTrait
-from ._zone import ProfileZoneTrait
+from ._profiler import GlobalProfiler, Profiler

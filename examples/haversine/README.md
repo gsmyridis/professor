@@ -32,6 +32,6 @@ pixi run -e examples test-haversine-parser
 `Parser` structure. Recursive children use `OwnedPointer[Value]`, which is the
 explicit indirection required for a recursively owned value tree in Mojo.
 
-The executable uses `professor.profile.Profiler` with a wall clock to report
-the full parse, every recursive `parse_value` call, the complete computation,
-and every individual haversine calculation.
+The executable uses `professor.profile.GlobalProfiler` with a wall clock to
+report the full parse, every recursive `parse_value` call, the complete
+computation, and every individual haversine calculation.

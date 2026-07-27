@@ -5,19 +5,9 @@ from professor.measure import Instrument
 from ._state import _CoreProfilerState
 
 
-trait ProfileZoneTrait:
-    """Linear profile zone usable as a context manager."""
-
-    def __enter__(self):
-        ...
-
-    def __exit__(deinit self):
-        ...
-
-
 @fieldwise_init
 @explicit_destroy(".close()")
-struct _ProfileZone[I: Instrument, C: Int](ProfileZoneTrait) where C > 0:
+struct _ProfileZone[I: Instrument, C: Int, origin: MutOrigin] where C > 0:
     comptime MetricType = Self.I.MetricType
 
     var label: StaticString
@@ -39,9 +29,9 @@ struct _ProfileZone[I: Instrument, C: Int](ProfileZoneTrait) where C > 0:
     """Value of the metric when the block was opened."""
 
     var prof_state: UnsafePointer[
-        _CoreProfilerState[Self.I, Self.C], MutUntrackedOrigin
+        _CoreProfilerState[Self.I, Self.C], Self.origin
     ]
-    """Pointer to the global profiler state."""
+    """Pointer to the profiler state."""
 
     @always_inline
     def __enter__(self):

@@ -14,6 +14,7 @@ format = "mojo format ."
 
 # Hardware counters need elevated privileges: sudo pixi run example-counters
 example-counters = "mojo run -I src examples/counters/main.mojo"
+example-counters-repetition = "mojo run -I src -I examples/counters examples/counters/repetition.mojo"
 
 # Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
