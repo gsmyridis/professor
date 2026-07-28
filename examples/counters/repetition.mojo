@@ -38,8 +38,8 @@ def main() raises:
         return
 
     var tester = RepetitionTester(
-        Pmu(),
-        patience=10_000,
-        max_repetitions=100_000,
+        WallClock(),
+        patience=20,
+        max_repetitions=1_000,
     )
     _ = tester.run[integer_work]()

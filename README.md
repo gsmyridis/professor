@@ -113,8 +113,9 @@ not ten total repetitions. `max_repetitions` is an optional hard limit. The
 tester owns the instrument, samples it immediately before and after the
 function, then updates the component-wise minimum, maximum, and average.
 
-On a terminal, a new minimum redraws the report in place. Redirected output
-receives only the final report. `run()` also returns a `RepetitionReport`.
+On a terminal, the current statistics redraw in place beneath the spinner.
+Redirected output receives only the final table. `run()` returns the accumulated
+`RepetitionResults`.
 
 ## Profile Zones
 

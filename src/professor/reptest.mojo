@@ -31,32 +31,13 @@ struct RepetitionResults[M: Metric](Copyable):
         return improved
 
 
-struct RepetitionReport[M: Metric](Writable):
-    """Rendered result of a repetition test."""
-
-    var results: RepetitionResults[Self.M]
-    var _tables: List[Table]
-
-    def __init__(out self, var results: RepetitionResults[Self.M]) raises:
-        self._tables = _repetition_tables(results)
-        self.results = results^
-
-    def tables(self) -> List[Table]:
-        return self._tables.copy()
-
-    def write_to(self, mut writer: Some[Writer]):
-        for i in range(len(self._tables)):
-            if i > 0:
-                writer.write("\n")
-            self._tables[i].write_to(writer)
-
-
 struct _LiveReport:
-    """Redraws reports in place on a terminal and prints once to a pipe."""
+    """Shows terminal activity and prints the completed report once."""
 
     var _is_terminal: Bool
     var _rendered_lines: Int
     var _spinner_frame: Int
+    """Stores the status spiner frame number."""
     var _next_spinner_update_ns: Int
 
     def __init__(out self):
@@ -67,16 +48,14 @@ struct _LiveReport:
 
     def start(mut self):
         if self._is_terminal:
-            self._redraw(self._spinner_line())
+            self._redraw(self._status_line())
 
     def update[M: Metric](mut self, results: RepetitionResults[M]) raises:
         if not self._is_terminal:
             return
-        self._redraw(
-            String(RepetitionReport[M](results.copy())) + self._spinner_line()
-        )
+        self._redraw(self._live_text(results))
 
-    def tick(mut self):
+    def tick[M: Metric](mut self, results: RepetitionResults[M]) raises:
         if not self._is_terminal:
             return
 
@@ -84,45 +63,68 @@ struct _LiveReport:
         if now < self._next_spinner_update_ns:
             return
 
-        # The cursor rests below the spinner after every live redraw.
-        print(
-            String("\033[1A\033[2K") + self._spinner_line(),
-            end="",
-        )
+        self._redraw(self._live_text(results))
 
     def cancel(mut self):
         if self._is_terminal and self._rendered_lines:
-            print("\033[1A\033[2K", end="")
-            self._rendered_lines -= 1
+            _clear_terminal(self._rendered_lines)
+            self._rendered_lines = 0
 
     def finish[M: Metric](mut self, results: RepetitionResults[M]) raises:
-        var report = RepetitionReport[M](results.copy())
+        var table = _repetition_table(results)
         if self._is_terminal:
-            self._redraw(String(report))
+            self._redraw(String(table))
         else:
-            print(report)
+            print(table)
 
     def _redraw(mut self, text: String):
         if self._rendered_lines:
-            print(
-                String(t"\033[{self._rendered_lines}A\033[J"),
-                end="",
-            )
+            _clear_terminal(self._rendered_lines)
         print(text, end="")
         self._rendered_lines = len(text.splitlines())
 
-    def _spinner_line(mut self) -> String:
-        var frame = self._spinner_frame % 4
+    def _live_text[
+        M: Metric
+    ](mut self, results: RepetitionResults[M]) raises -> String:
+        var table = _repetition_table(results)
+        table.title = self._status()
+        return String(table)
+
+    def _status_line(mut self) -> String:
+        return self._status() + "\n"
+
+    def _status(mut self) -> String:
+        var frame = self._spinner_frame % 8
         self._spinner_frame += 1
         self._next_spinner_update_ns = Int(perf_counter_ns()) + 100_000_000
 
         if frame == 0:
-            return "| Testing...\n"
+            return "⣾ Testing"
         if frame == 1:
-            return "/ Testing...\n"
+            return "⣷ Testing"
         if frame == 2:
-            return "- Testing...\n"
-        return "\\ Testing...\n"
+            return "⣯ Testing"
+        if frame == 3:
+            return "⣟ Testing"
+        if frame == 4:
+            return "⡿ Testing"
+        if frame == 5:
+            return "⢿ Testing"
+        if frame == 6:
+            return "⣽ Testing"
+        return "⣻ Testing"
+
+
+def _clear_terminal(n_lines: Int):
+    """Clears the `n_lines` last lines from the terminal."""
+    comptime MOVE_CURSOR = "\033["
+    comptime UP = "A"
+    comptime CLEAR_DISPLAY_TILL_END = "\033[J"
+
+    print(
+        t"{MOVE_CURSOR}{n_lines}{UP}{CLEAR_DISPLAY_TILL_END}",
+        end="",
+    )
 
 
 struct RepetitionTester[I: Instrument, //]:
@@ -151,10 +153,11 @@ struct RepetitionTester[I: Instrument, //]:
 
     def run[
         function: def() thin raises -> None
-    ](mut self) raises -> RepetitionReport[Self.MetricType]:
+    ](mut self) raises -> RepetitionResults[Self.MetricType]:
         """Measures `function` until its minima stop improving."""
         var renderer = _LiveReport()
         renderer.start()
+
         try:
             var first_sample = self._measure[function]()
             var results = RepetitionResults[Self.MetricType](first_sample)
@@ -171,13 +174,13 @@ struct RepetitionTester[I: Instrument, //]:
                     renderer.update(results)
                 else:
                     stale_repetitions += 1
-                    renderer.tick()
+                    renderer.tick(results)
 
             renderer.finish(results)
-            return RepetitionReport[Self.MetricType](results^)
-        except:
+            return results^
+        except error:
             renderer.cancel()
-            raise
+            raise error^
 
     def _measure[
         function: def() thin raises -> None
@@ -188,9 +191,9 @@ struct RepetitionTester[I: Instrument, //]:
         except error:
             raise Error(String(t"error while repetition testing: {error}"))
         var end = self._instrument.measure()
-        var sample = end - start
-        _require_comparable(sample)
-        return sample^
+        var delta = end - start
+        _require_comparable(delta)
+        return delta^
 
     def _reached_limit(self, total_repetitions: Int) -> Bool:
         if self._max_repetitions:
@@ -198,9 +201,7 @@ struct RepetitionTester[I: Instrument, //]:
         return False
 
 
-def _repetition_tables[
-    M: Metric
-](results: RepetitionResults[M]) raises -> List[Table]:
+def _repetition_table[M: Metric](results: RepetitionResults[M]) raises -> Table:
     var minimum = results.minimum.fields()
     var maximum = results.maximum.fields()
     var average = results.average().fields()
@@ -237,7 +238,7 @@ def _repetition_tables[
     for ref field in average:
         average_row.append(Cell(field.value.copy()))
     table.add_row(average_row^)
-    return [table^]
+    return table^
 
 
 def _title(repetitions: Int) -> String:
