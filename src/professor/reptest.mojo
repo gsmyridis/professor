@@ -207,42 +207,41 @@ def _repetition_tables[
     _check_shape(minimum, maximum)
     _check_shape(minimum, average)
 
-    var tables = List[Table](capacity=len(minimum))
-    for i in range(len(minimum)):
-        var table = Table(
-            _title(minimum[i], results.test_count),
-            [
-                Column("Statistic"),
-                Column("Value", align=Align.RIGHT),
-            ],
-            TableStyle(),
-        )
-        table.add_row(
-            [
-                Cell("Minimum"),
-                Cell(minimum[i].value.copy()),
-            ]
-        )
-        table.add_row(
-            [
-                Cell("Maximum"),
-                Cell(maximum[i].value.copy()),
-            ]
-        )
-        table.add_row(
-            [
-                Cell("Average"),
-                Cell(average[i].value.copy()),
-            ]
-        )
-        tables.append(table^)
-    return tables^
+    var columns = List[Column](capacity=len(minimum) + 1)
+    columns.append(Column("Statistic"))
+    for ref field in minimum:
+        if field.name:
+            columns.append(Column(field.name.copy(), align=Align.RIGHT))
+        else:
+            columns.append(Column("Value", align=Align.RIGHT))
+
+    var table = Table(
+        _title(results.test_count),
+        columns^,
+        TableStyle(),
+    )
+    var minimum_row = List[Cell](capacity=len(minimum) + 1)
+    minimum_row.append(Cell("Minimum"))
+    for ref field in minimum:
+        minimum_row.append(Cell(field.value.copy()))
+    table.add_row(minimum_row^)
+
+    var maximum_row = List[Cell](capacity=len(maximum) + 1)
+    maximum_row.append(Cell("Maximum"))
+    for ref field in maximum:
+        maximum_row.append(Cell(field.value.copy()))
+    table.add_row(maximum_row^)
+
+    var average_row = List[Cell](capacity=len(average) + 1)
+    average_row.append(Cell("Average"))
+    for ref field in average:
+        average_row.append(Cell(field.value.copy()))
+    table.add_row(average_row^)
+    return [table^]
 
 
-def _title(field: MetricField, repetitions: Int) -> String:
+def _title(repetitions: Int) -> String:
     var noun = "repetition" if repetitions == 1 else "repetitions"
-    if field.name:
-        return String(t"{field.name} — {repetitions} {noun}")
     return String(t"Repetition results — {repetitions} {noun}")
 
 
