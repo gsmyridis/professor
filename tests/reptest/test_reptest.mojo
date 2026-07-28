@@ -150,9 +150,16 @@ def test_report_renders_each_metric_component() raises:
         max_repetitions=2,
     )
 
-    var text = String(tester.run[do_nothing]())
-    assert_equal(text.find("cycles — 2 repetitions") >= 0, True)
-    assert_equal(text.find("instructions — 2 repetitions") >= 0, True)
+    var report = tester.run[do_nothing]()
+    var tables = report.tables()
+    assert_equal(len(tables), 1)
+    assert_equal(tables[0].num_columns(), 3)
+    assert_equal(tables[0].column(0).header, "Statistic")
+    assert_equal(tables[0].column(1).header, "cycles")
+    assert_equal(tables[0].column(2).header, "instructions")
+
+    var text = String(report)
+    assert_equal(text.find("Repetition results — 2 repetitions") >= 0, True)
     assert_equal(text.find("Minimum") >= 0, True)
     assert_equal(text.find("Maximum") >= 0, True)
     assert_equal(text.find("Average") >= 0, True)
