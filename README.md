@@ -35,9 +35,10 @@ cache misses, branch behavior, retired instructions, and more.
 ## Quick Start
 
 ```mojo
-from professor import Profiler, WallClock
+from professor import GlobalProfiler
+from professor.measure.default import WallClock
 
-comptime Prof = Profiler[WallClock]
+comptime Prof = GlobalProfiler[WallClock]
 
 def parse(input: String) -> Int:
     with Prof.zone["parse"]():
@@ -83,36 +84,73 @@ pixi run -e examples haversine-profile
 
 ![Haversine profiler report with per-zone timings and color-coded percentages](assets/haversine-profile.png)
 
+## Repetition Testing
+
+`RepetitionTester` repeatedly measures one top-level function and stops after a
+configured number of consecutive runs produce no new minimum in any metric
+component:
+
+```mojo
+from professor import RepetitionTester
+from professor.measure.default import WallClock
+
+
+def read_file() raises:
+    ...
+
+
+def main() raises:
+    var tester = RepetitionTester(
+        WallClock(),
+        patience=10,
+        max_repetitions=1_000,
+    )
+    _ = tester.run[read_file]()
+```
+
+Here `patience=10` means ten consecutive repetitions without improvement,
+not ten total repetitions. `max_repetitions` is an optional hard limit. The
+tester owns the instrument, samples it immediately before and after the
+function, then updates the component-wise minimum, maximum, and average.
+
+On a terminal, the current statistics redraw in place beneath the spinner.
+Redirected output receives only the final table. `run()` returns the accumulated
+`RepetitionResults`.
+
 ## Profile Zones
 
 ### Creating profilers
 
-`Profiler` is parameterized over an `Instrument` (the metric source), an optional
-zone `Capacity` (default 1024 zone sites), and an optional `Tag` that names
-its global state:
+`Profiler` is a runtime value that owns its instrument, measurements, and zone
+registry. Separate values are independent, even when they have the same type:
 
 ```mojo
 from professor.profile import Profiler
 from professor.measure.default import WallClock
 
-comptime ParsingProfiler = Profiler[WallClock, Tag="parse"]
-comptime ComputeProfiler = Profiler[WallClock, Tag="compute", Capacity=16]
+var parsing_profiler = Profiler[WallClock]()
+var compute_profiler = Profiler[WallClock, Capacity=16]()
 ```
 
-Defining your own profiler aliases makes it straightforward to run several
-independent profilers at once, targeting different parts of the program,
-potentially with different metrics.
-Profilers with the same `Tag` (and parameters) share state; the default tag is `"default"`.
+Pass an instrument to initialize a profiler with runtime configuration:
+
+```mojo
+var profiler = Profiler[MyInstrument](MyInstrument(config))
+```
+
+Use `GlobalProfiler` when zones spread across functions or modules and should
+write into one program-wide profiler. It is a static facade over a globally
+stored `Profiler`; `Tag` distinguishes global instances.
 
 Conventionally you declare your profilers once, in a `profile.mojo` file, and
 import them wherever you instrument:
 
 ```mojo
 # profile.mojo
-from professor.profile import Profiler
+from professor.profile import GlobalProfiler
 from professor.measure.default import WallClock
 
-comptime MyProfiler = Profiler[WallClock]
+comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
 ```
 
 ```mojo
@@ -171,11 +209,11 @@ var zone = MyProfiler.zone["hot_loop", 3]()  # anchor index chosen by you
 Call `start()` before opening any zones and `end()` after the last zone closes.
 `report()` then returns a `Report` you can print or inspect. Printing writes the
 program total and an aligned table to standard output with the zone's semantic
-name, call site relative to the current working directory, hit count, inclusive
+name, call site relative to the project root, hit count, inclusive
 and exclusive metrics, inclusive metric per hit, and inclusive percentage of
-the program total. On a color terminal, only the percentage is colored: red at
-50% or above, yellow at 20% or above, and green below 20%. Redirected output
-stays plain text.
+the program total. On a color terminal the header is bold and the percentage is
+colored: red at 50% or above, yellow at 20% or above, and green below 20%.
+Redirected output stays plain text.
 
 For each zone the report currently includes:
 
@@ -193,6 +231,37 @@ metrics are transiently inconsistent while a zone is in flight. `report()`
 also requires a completed start/end interval. Min/max/mean/variance per zone
 are on the roadmap.
 
+### Multi-valued metrics
+
+A metric does not have to be a single number. When a reading decomposes into
+several components — cycles and retired instructions, say — the report prints
+one table per component, each titled with that component's program total:
+
+```text
+cycles — total 7000
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       3000       2000      3000    42.9%
+inner  main.mojo:56:28      1       1000       1000      1000    14.3%
+
+instructions — total 17500
+
+Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
+-----  ---------------  -----  ---------  ---------  --------  -------
+outer  main.mojo:62:28      1       7500       5000      7500    42.9%
+inner  main.mojo:56:28      1       2500       2500      2500    14.3%
+```
+
+Separate tables rather than stacked rows, because the interesting comparison
+is down a column — which zone dominates *this* metric — and the answer differs
+per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
+same. Each table can therefore also be read, and eventually sorted, along its
+own axis. Percentages are computed per component, each against the
+corresponding component of the program total.
+
+A metric with one component yields exactly one table, titled `Program total:`.
+
 ### Custom metrics: `Instrument` and `Metric`
 
 Wall-clock time is the default metric, but any monotonically accumulating
@@ -201,10 +270,11 @@ readings implement `Metric`:
 
 ```mojo
 from professor.measure import Instrument, Metric
+from professor.profile import Profiler
 
 
 struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
-    ...  # __sub__, __add__, __mul__, __truediv__, min, max, write_to
+    ...  # __sub__, __add__, __truediv__, min, max, write_to
 
 
 struct MyInstrument(Instrument):
@@ -217,7 +287,7 @@ struct MyInstrument(Instrument):
         ...
 
 
-comptime MyProfiler = Profiler[MyInstrument, Tag="custom"]
+var profiler = Profiler[MyInstrument](MyInstrument())
 ```
 
 Metric readings are subtracted to form deltas and added to aggregate them;
@@ -225,6 +295,39 @@ multiplication, division by a count, and `min`/`max` exist so the profiler can
 maintain online statistics. Readings may be multi-valued — for example, a pair
 of hardware counters — with all operations applied elementwise. The
 `Defaultable` constructor must produce the zero reading.
+
+`write_to` and `scalar_value` are enough for a single-valued metric. A
+multi-valued one overrides `fields()` to name its components, which is what
+lets the report stack them:
+
+```mojo
+from professor.measure import MetricField
+
+
+struct Counters(Copyable, Defaultable, ImplicitlyDeletable, Metric):
+    var cycles: Int
+    var instructions: Int
+
+    ...
+
+    def fields(self) -> List[MetricField]:
+        return [
+            MetricField("cycles", String(self.cycles), Float64(self.cycles)),
+            MetricField(
+                "instructions",
+                String(self.instructions),
+                Float64(self.instructions),
+            ),
+        ]
+```
+
+Each `MetricField` carries a component name, the formatted value (unit
+included), and an optional scalar used for percentages — pass `None` for a
+component that should not be compared. The list must have the same length and
+the same order for every reading of a given metric type, including the
+default-constructed one. The default `fields()` returns a single anonymous
+component built from `write_to` and `scalar_value`, so existing metrics need
+no change.
 
 One caveat: zone open and close are on the measurement's hot path and are
 non-raising. An `Instrument` that can fail (for example, one that talks to the

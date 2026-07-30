@@ -9,10 +9,10 @@ the implementation follows the Rust `Token` -> `Tokenizer` -> `Value` ->
 from std.memory import OwnedPointer
 
 from professor.measure.default import WallClock
-from professor.profile import Profiler
+from professor.profile import GlobalProfiler
 
 
-comptime HaversineProfiler = Profiler[
+comptime HaversineProfiler = GlobalProfiler[
     WallClock, Tag="haversine.parser", Capacity=10
 ]
 

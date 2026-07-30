@@ -13,11 +13,7 @@ from professor.arch.aarch64 import cntpct_el0
 
 @fieldwise_init
 struct Nanos(Defaultable, ImplicitlyCopyable, Metric):
-    """A wall-clock reading in nanoseconds.
-
-    Products of `Nanos` (as accumulated for variance) are in squared
-    nanoseconds even though they print with the plain unit.
-    """
+    """A wall-clock reading in nanoseconds."""
 
     var value: Int
 
@@ -29,9 +25,6 @@ struct Nanos(Defaultable, ImplicitlyCopyable, Metric):
 
     def __add__(self, other: Self) -> Self:
         return Self(self.value + other.value)
-
-    def __mul__(self, other: Self) -> Self:
-        return Self(self.value * other.value)
 
     def __truediv__(self, count: Int) -> Self:
         return Self(self.value // count)

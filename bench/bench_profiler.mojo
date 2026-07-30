@@ -20,9 +20,6 @@ struct NullSample(Defaultable, ImplicitlyCopyable, Metric):
     def __add__(self, other: Self) -> Self:
         return Self()
 
-    def __mul__(self, other: Self) -> Self:
-        return Self()
-
     def __truediv__(self, count: Int) -> Self:
         return Self()
 

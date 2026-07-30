@@ -1,11 +1,12 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-from professor import Instrument, Metric, Profiler, Nanos
+from professor import GlobalProfiler, Instrument, Metric, Nanos, Profiler
+from professor.report import ColorMode
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
 # increasing tick, so durations are exact and independent of the wall clock.
-# Profiler state is created lazily per `Tag` with a default-constructed
+# GlobalProfiler state is created lazily per `Tag` with a default-constructed
 # measurer, so every test uses its own tag to get a fresh Ticker at 0.
 struct Ticker(Instrument):
     comptime MetricType = Nanos
@@ -34,9 +35,6 @@ struct OpaqueTicks(Defaultable, ImplicitlyCopyable, Metric):
     def __add__(self, other: Self) -> Self:
         return Self(self.value + other.value)
 
-    def __mul__(self, other: Self) -> Self:
-        return Self(self.value * other.value)
-
     def __truediv__(self, count: Int) -> Self:
         return Self(self.value // count)
 
@@ -62,8 +60,56 @@ struct OpaqueTicker(Instrument):
         return OpaqueTicks(self.now)
 
 
+struct ConfigurableTicker(Instrument):
+    comptime MetricType = Nanos
+    var now: Int
+    var step: Int
+
+    def __init__(out self):
+        self = Self(1)
+
+    def __init__(out self, step: Int):
+        self.now = 0
+        self.step = step
+
+    def measure(mut self) -> Nanos:
+        self.now += self.step
+        return Nanos(self.now)
+
+
+def test_runtime_profiler_owns_configured_instrument() raises:
+    var prof = Profiler[ConfigurableTicker](ConfigurableTicker(5))
+
+    prof.start()
+    with prof.zone["runtime"]():
+        pass
+    prof.end()
+
+    var report = prof.report()
+    assert_equal(report.total.value, 15)
+    assert_equal(report.zones[0].inclusive.value, 5)
+
+
+def test_runtime_profilers_of_same_type_are_independent() raises:
+    var fast = Profiler[ConfigurableTicker](ConfigurableTicker(1))
+    var slow = Profiler[ConfigurableTicker](ConfigurableTicker(10))
+
+    fast.start()
+    with fast.zone["work"]():
+        pass
+    fast.end()
+
+    slow.start()
+    with slow.zone["work"]():
+        pass
+    slow.end()
+
+    assert_equal(fast.report().total.value, 3)
+    assert_equal(slow.report().total.value, 30)
+
+
 def test_single_zone_inclusive_equals_exclusive() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.single"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.single"]
 
     Prof.start()  # tick 1
     var z = Prof.zone["only"]()  # tick 2
@@ -77,6 +123,7 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_equal(rep.zones[0].count, 1)
     assert_equal(rep.zones[0].inclusive.value, 1)  # 2 - 1
     assert_equal(rep.zones[0].exclusive.value, 1)  # no children
+    assert_equal(rep.zones[0].inclusive_min.value, 1)
     assert_true(rep.zones[0].loc.line() > 0)
     assert_true(rep.zones[0].loc.column() > 0)
     assert_true(
@@ -91,8 +138,10 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Count") != -1)
     assert_true(table.find("Inclusive") != -1)
     assert_true(table.find("Exclusive") != -1)
-    assert_true(table.find("Time/iter") != -1)
-    assert_true(table.find("% Total") != -1)
+    assert_true(table.find("Min. Inclusive") != -1)
+    assert_true(table.find("Inclusive/Iter") != -1)
+    assert_true(table.find("Inclusive (%)") != -1)
+    assert_true(table.find("Exclusive (%)") != -1)
     assert_true(table.find("Program total: 3ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
     assert_true(table.find("only") != -1)
@@ -101,14 +150,23 @@ def test_single_zone_inclusive_equals_exclusive() raises:
 
 
 def test_custom_metric_uses_plain_table_values() raises:
-    comptime Prof = Profiler[OpaqueTicker, Tag="test.opaque-metric"]
+    comptime Prof = GlobalProfiler[OpaqueTicker, Tag="test.opaque-metric"]
 
     Prof.start()
     with Prof.zone["opaque"]():
         pass
     Prof.end()
 
-    var table = String(Prof.report())
+    # Force color on rather than leaving it to `ColorMode.AUTO`, which asks
+    # `stdout.isatty()` and so renders differently under a terminal than under
+    # a pipe. With the bold header off, any escape left in the output could
+    # only have come from the percent cell -- which is what this pins down: a
+    # metric with no scalar shows a plain `N/A`, never a colored one.
+    var tables = Prof.report().tables()
+    tables[0].style.color = ColorMode.ALWAYS
+    tables[0].style.header_bold = False
+
+    var table = String(tables[0])
     assert_true(table.find("Program total: 3 ticks") != -1)
     assert_true(table.find("opaque") != -1)
     assert_true(table.find("1 ticks") != -1)
@@ -117,7 +175,7 @@ def test_custom_metric_uses_plain_table_values() raises:
 
 
 def test_nested_exclusive_subtracts_child() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.nested"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.nested"]
 
     Prof.start()
     var outer = Prof.zone["outer"]()
@@ -137,8 +195,10 @@ def test_nested_exclusive_subtracts_child() raises:
         if z.name == "outer":
             outer_incl = z.inclusive.value
             outer_excl = z.exclusive.value
+            assert_equal(z.inclusive_min.value, 3)
         elif z.name == "inner":
             inner_incl = z.inclusive.value
+            assert_equal(z.inclusive_min.value, 1)
 
     assert_equal(outer_incl, 3)
     assert_equal(inner_incl, 1)
@@ -146,7 +206,7 @@ def test_nested_exclusive_subtracts_child() raises:
 
 
 def test_multiple_children_subtracted() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.siblings"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.siblings"]
 
     Prof.start()
     var a = Prof.zone["a"]()
@@ -171,7 +231,7 @@ def test_multiple_children_subtracted() raises:
 
 
 def test_reentry_aggregates() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.reentry"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.reentry"]
 
     Prof.start()
     for _ in range(3):
@@ -189,7 +249,7 @@ def test_reentry_aggregates() raises:
 
 
 def test_deep_lifo_nesting() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.lifo"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.lifo"]
 
     Prof.start()
     var z1 = Prof.zone["a"]()
@@ -217,7 +277,7 @@ def test_deep_lifo_nesting() raises:
             assert_equal(z.exclusive.value, 1)  # innermost, no children
 
 
-comptime RecProf = Profiler[Ticker, Tag="test.recursion"]
+comptime RecProf = GlobalProfiler[Ticker, Tag="test.recursion"]
 
 
 def _recurse(depth: Int):
@@ -247,7 +307,7 @@ def test_recursive_zone_counts_outermost_span_once() raises:
 
 
 def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.same-name-locations"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.same-name-locations"]
 
     Prof.start()
     # Source location is part of site identity, so these are separate anchors.
@@ -270,7 +330,7 @@ def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
     assert_equal(exclusive_sum, 3)  # outer self 2 + inner self 1
 
 
-comptime ManualProf = Profiler[Ticker, Tag="test.manual-shared"]
+comptime ManualProf = GlobalProfiler[Ticker, Tag="test.manual-shared"]
 
 
 def _hit_pinned_anchor():
@@ -299,7 +359,7 @@ def test_manual_and_automatic_anchors_coexist() raises:
     # Manual indices live in [0, Capacity); automatic sites are allocated
     # above them, so index 3 (the highest valid one here) cannot collide
     # with the runtime-resolved site.
-    comptime Prof = Profiler[Ticker, Tag="test.capacity", Capacity=4]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.capacity", Capacity=4]
 
     Prof.start()
     var auto_zone = Prof.zone["auto"]()
@@ -317,7 +377,7 @@ def test_manual_and_automatic_anchors_coexist() raises:
 
 
 def test_report_with_open_zone_raises() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.open"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.open"]
 
     # Can't use `with assert_raises(...)` here: its throw paths would abandon
     # the linear `z`. Catch everything, close `z`, then assert.
@@ -340,7 +400,7 @@ def test_report_with_open_zone_raises() raises:
 
 
 def test_session_lifecycle_errors_are_reported() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.lifecycle-errors"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.lifecycle-errors"]
 
     with assert_raises(contains="before start"):
         Prof.end()
@@ -355,8 +415,50 @@ def test_session_lifecycle_errors_are_reported() raises:
         Prof.end()
 
 
+comptime ResetProf = GlobalProfiler[Ticker, Tag="test.reset"]
+
+
+def _record_reset_zone():
+    with ResetProf.zone["reused"]():
+        pass
+
+
+def test_reset_starts_a_fresh_session_and_preserves_sites() raises:
+    ResetProf.start()
+    _record_reset_zone()
+    ResetProf.end()
+    assert_equal(ResetProf.report().zones[0].count, 1)
+
+    ResetProf.reset()
+    with assert_raises(contains="before end"):
+        _ = ResetProf.report()
+
+    ResetProf.start()
+    _record_reset_zone()
+    ResetProf.end()
+
+    var report = ResetProf.report()
+    assert_equal(len(report.zones), 1)
+    assert_true(report.zones[0].name == "reused")
+    assert_equal(report.zones[0].count, 1)
+
+
+def test_reset_rejects_an_active_session() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.reset-active"]
+
+    Prof.start()
+    var raised = False
+    try:
+        Prof.reset()
+    except error:
+        raised = String(error).find("before end") != -1
+    assert_true(raised)
+    Prof.end()
+    Prof.reset()
+
+
 def test_report_is_repeatable() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.repeat"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.repeat"]
 
     Prof.start()
     var z = Prof.zone["once"]()
@@ -374,7 +476,7 @@ def test_report_is_repeatable() raises:
 
 
 def test_with_statement_closes_zone() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.with"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.with"]
 
     Prof.start()
     with Prof.zone["scoped"]():
@@ -389,7 +491,7 @@ def test_with_statement_closes_zone() raises:
 
 
 def test_with_statement_nests_with_linear_zones() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.with-nested"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.with-nested"]
 
     Prof.start()
     with Prof.zone["outer"]():
@@ -409,7 +511,7 @@ def test_with_statement_nests_with_linear_zones() raises:
 
 
 def test_with_statement_closes_zone_on_raise() raises:
-    comptime Prof = Profiler[Ticker, Tag="test.with-raise"]
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.with-raise"]
 
     Prof.start()
     # Unlike a linear handle, a with-scoped zone closes itself on the unwind

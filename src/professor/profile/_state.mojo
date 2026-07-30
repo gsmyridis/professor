@@ -58,8 +58,11 @@ struct _CoreProfilerState[I: Instrument, Capacity: Int](
     # ===--------------------------------------------------------------------===
 
     def __init__(out self):
+        self = Self(Self.I())
+
+    def __init__(out self, var instrument: Self.I):
         self.anchors = Self._AnchorArrayType(fill=_Anchor[Self.MetricType]())
-        self.instrument = Self.I()
+        self.instrument = instrument^
         self.start_metric = Self.MetricType()
         self.total_metric = Self.MetricType()
         self.has_started = False
@@ -80,5 +83,8 @@ struct _ProfilerState[I: Instrument, Capacity: Int](
     var registry: _Registry[Self.Capacity]
 
     def __init__(out self):
-        self.core = _CoreProfilerState[Self.I, Self.Capacity]()
+        self = Self(Self.I())
+
+    def __init__(out self, var instrument: Self.I):
+        self.core = _CoreProfilerState[Self.I, Self.Capacity](instrument^)
         self.registry = _Registry[Self.Capacity]()
