@@ -55,7 +55,7 @@ def _close(fd: c_int):
         _ = external_call["close", c_int](fd)
 
 
-struct EventGroup:
+struct EventGroup(Movable):
     """Own the file descriptors for one perf event group."""
 
     var leader: c_int
@@ -71,6 +71,16 @@ struct EventGroup:
         _close(self.l1d_read_misses)
         _close(self.instructions)
         _close(self.leader)
+
+    def read[
+        origin: MutOrigin,
+    ](
+        self,
+        values: UnsafePointer[UInt64, origin],
+        value_capacity: c_size_t,
+    ) -> c_ssize_t:
+        """Read the group leader while keeping every owned fd alive."""
+        return perf_event_read(self.leader, values, value_capacity)
 
 
 def _event_attr(type_: UInt32, config: UInt64) -> PerfEventAttr:
@@ -210,8 +220,7 @@ def measure() raises:
     )
 
     var read_data = InlineArray[UInt64, GROUP_READ_WORDS](fill=0)
-    var bytes_read = perf_event_read(
-        group.leader,
+    var bytes_read = group.read(
         read_data.unsafe_ptr(),
         c_size_t(len(read_data)),
     )
