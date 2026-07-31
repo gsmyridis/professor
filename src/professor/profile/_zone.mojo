@@ -6,7 +6,7 @@ from ._state import _CoreProfilerState
 
 
 @fieldwise_init
-@explicit_destroy(".close()")
+@explicit_destroy("The profiling zone must be closed with: .close()")
 struct _ProfileZone[I: Instrument, C: Int, origin: MutOrigin] where C > 0:
     comptime MetricType = Self.I.MetricType
 
