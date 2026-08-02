@@ -113,3 +113,6 @@ struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     cgroupfs directory, and `cpu` identifies the monitored CPU. Cgroup
     monitoring may require additional permissions.
     """
+
+    def __contains__(self, other: Self) -> Bool:
+        return self.value & other.value

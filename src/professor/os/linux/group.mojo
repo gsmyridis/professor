@@ -1,15 +1,18 @@
 from std.sys._libc_errno import get_errno
-from std.ffi import c_int, c_size_t, c_ulong
+from std.ffi import c_int, c_size_t
+from std.sys.info import size_of
 
-from ._file import _FileHandle
+from .counter import Counter, _open_event, NO_GROUP
 from ._sys import (
+    PERF_FORMAT_GROUP,
+    PERF_FORMAT_ID,
+    PERF_FORMAT_TOTAL_TIME_ENABLED,
+    PERF_FORMAT_TOTAL_TIME_RUNNING,
     PERF_IOC_FLAG_GROUP,
-    perf_event_open,
     perf_event_read,
     perf_event_enable,
     perf_event_disable,
     perf_event_reset,
-    perf_event_id,
 )
 from .config import (
     Config,
@@ -17,112 +20,13 @@ from .config import (
     Virtualization,
     Flag,
     CpuId,
-    ProcessId
+    ProcessId,
 )
 from ._event import PerfEvent
+from .counts import Counts
 
 
-struct GroupBuilder(Movable):
-
-    var _cpu: CpuId
-    """ID of the CPU to monitor."""
-
-    var _process: ProcessId
-    """ID of the process to monitor."""
-
-    var _flag: Flag
-    """Flags when opening the perf event."""
-
-    var _config: Config
-    """Configuration prototype."""
-
-    def __init__(
-        out self,
-        read_format: UInt64,
-        *,
-        cpu: CpuId = CpuId.Any,
-        process: ProcessId = ProcessId.Calling,
-        flag: Flag = Flag.CloseOnExec,
-        mode: CountMode = CountMode.Userspace,
-        virtualization: Virtualization = Virtualization.Host,
-    ):
-        self._cpu = cpu
-        self._process = process
-        self._flag = flag
-
-        self._config = Config()
-        self._config.read_format = read_format
-
-        self._config.set_disabled(True)
-
-        self._config.set_exclude_user(not mode.includes(CountMode.Userspace))
-        self._config.set_exclude_kernel(not mode.includes(CountMode.Kernel))
-        self._config.set_exclude_hv(not mode.includes(CountMode.Hypervisor))
-
-        self._config.set_exclude_idle(False)
-
-        self._config.set_exclude_host(
-            not virtualization.includes(Virtualization.Host)
-        )
-        self._config.set_exclude_guest(
-            not virtualization.includes(Virtualization.Guest)
-        )
-
-    def build(mut self, events: List[PerfEvent]) raises -> Group:
-        """Open `events` as one kernel-scheduled performance event group.
-
-        The first requested event becomes the group leader. Every remaining
-        event is added as a member, and every returned file descriptor is
-        owned by the resulting `Group`.
-        """
-        if len(events) == 0:
-            raise Error("events cannot be empty")
-
-        var files = List[_FileHandle](capacity=len(events))
-        var ids = List[UInt64](capacity=len(events))
-
-        for i in range(len(events)):
-            var event = events[i]
-
-            var config = self._config.copy()
-            config.type_ = event.type()
-            config.config = event.config()
-
-            var group_fd = c_int(-1)
-            if i > 0:
-                config.set_disabled(False)
-                group_fd = files[0]._get_raw_fd()
-
-            var fd = perf_event_open(
-                UnsafePointer(to=config),
-                c_int(self.process.value),
-                c_int(self.cpu.value),
-                group_fd,
-                c_ulong(Flag.CloseOnExec.value),
-            )
-            if fd < 0:
-                var err = get_errno()
-                raise Error(t"perf_event_open({event.name()}) failed: {err}")
-
-            var file = _FileHandle(unsafe_fd=fd)
-            var event_id: UInt64 = 0
-            if (
-                perf_event_id(file._get_raw_fd(), UnsafePointer(to=event_id))
-                != 0
-            ):
-                var err = get_errno()
-                raise Error(
-                    t"failed to get performance event id for "
-                    t"{event.name()}: {err}"
-                )
-
-            files.append(file^)
-            ids.append(event_id)
-
-        return Group(files^, ids^)
-
-
-struct Group(Movable):
+struct Group(Movable, Sized):
     """An owned group of simultaneously scheduled counting events.
 
     The first requested event is the kernel group leader. `Group` owns the
@@ -134,29 +38,67 @@ struct Group(Movable):
     a group read to detect a group that could not be scheduled.
     """
 
-    var _files: List[_FileHandle]
-    """Owned event files in group order, with the leader first."""
+    # ===---------------------------------------------------------------------===
+    # Method
+    # ===---------------------------------------------------------------------===
 
-    var _ids: List[UInt64]
-    """Kernel-assigned event IDs in the same order as `_files`."""
+    var _counters: List[Counter]
+    """Owned counters in group order, with the leader first."""
 
-    var _event_count: Int
-    """The number of requested events in the group."""
+    # ===---------------------------------------------------------------------===
+    # Lifecycle methods
+    # ===---------------------------------------------------------------------===
 
     def __init__(
         out self,
-        var files: List[_FileHandle],
-        var ids: List[UInt64],
-    ):
-        debug_assert(len(files) > 0, "a group must contain a leader")
-        debug_assert(len(files) == len(ids), "event files and IDs must match")
-        self._event_count = len(files)
-        self._files = files^
-        self._ids = ids^
+        events: List[PerfEvent],
+        *,
+        cpu: CpuId = CpuId.Any,
+        process: ProcessId = ProcessId.Calling,
+        flag: Flag = Flag.CloseOnExec,
+        mode: CountMode = CountMode.Userspace,
+        virtualization: Virtualization = Virtualization.Host,
+    ) raises:
+        if Flag.NoGroup in flag:
+            raise Error("cannot set Flag.NoGroup for a group")
+
+        if len(events) == 0:
+            raise Error("events cannot be empty")
+
+        var config_prototype = Config()
+        config_prototype.read_format = (
+            PERF_FORMAT_GROUP
+            | PERF_FORMAT_ID
+            | PERF_FORMAT_TOTAL_TIME_ENABLED
+            | PERF_FORMAT_TOTAL_TIME_RUNNING
+        )
+
+        self._counters = List[Counter](capacity=len(events))
+
+        for i, event in enumerate(events):
+            var config = config_prototype.copy()
+
+            var group_fd = c_int(NO_GROUP)
+            if i > 0:
+                # config.set_disabled(False)
+                group_fd = self._counters[0].raw_fd()
+
+            var file = _open_event(
+                event,
+                config^,
+                cpu,
+                process,
+                flag,
+                mode,
+                virtualization,
+                group_fd,
+            )
+            var counter = Counter(event=event, unsafe_file=file^)
+            self._counters.append(counter^)
 
     @always_inline
     def _leader_fd(self) -> c_int:
-        return self._files[0]._get_raw_fd()
+        return self._counters[0].raw_fd()
 
     def id(self) -> UInt64:
         """Returns the unique id of the leader event assigned by the kernel.
@@ -164,11 +106,10 @@ struct Group(Movable):
         Returns:
             The leader event's unique id.
         """
-        return self._ids[0]
+        return self._counters[0].id()
 
-    def event_count(self) -> Int:
-        """Return the number of requested events in the group."""
-        return self._event_count
+    def __len__(self) -> Int:
+        return len(self._counters)
 
     def enable(mut self) raises:
         """Enable every event in this group.
@@ -192,32 +133,55 @@ struct Group(Movable):
             var err = get_errno()
             raise Error(t"failed to reset event group: {err}")
 
-    def read[
-        origin: MutOrigin
-    ](self, buffer: Span[UInt64, origin]) raises -> Int:
-        """Read counting payload into a span.
-
-        Args:
-            buffer: The mutable Span to read data into.
-
-        Returns:
-            The total amount of data that was read in bytes.
-
-        Raises:
-            An error if this file handle is invalid, or if the file read
-            returned a failure.
-        """
-
+    def read(self) raises -> Counts:
+        """Read all values atomically in requested event order."""
         var fd = self._leader_fd()
         if fd < 0:
             raise Error("invalid file handle")
 
+        var event_count = len(self._counters)
+        var word_count = 3 + 2 * event_count
+        var buffer = List[UInt64](length=word_count, fill=0)
         var bytes_read = perf_event_read(
             fd, buffer.unsafe_ptr(), c_size_t(len(buffer))
         )
-
         if bytes_read < 0:
             var err = get_errno()
             raise Error("failed to read event group: " + String(err))
 
-        return bytes_read
+        var expected_bytes = word_count * size_of[UInt64]()
+        if Int(bytes_read) != expected_bytes:
+            raise Error(
+                t"invalid group read size: expected {expected_bytes} bytes, "
+                t"received {bytes_read}"
+            )
+        if buffer[0] != UInt64(event_count):
+            raise Error(
+                t"invalid group event count: expected {event_count}, "
+                t"received {buffer[0]}"
+            )
+
+        var values = List[UInt64](length=event_count, fill=0)
+        var seen = List[Bool](length=event_count, fill=False)
+        for read_index in range(event_count):
+            var offset = 3 + 2 * read_index
+            var value = buffer[offset]
+            var event_id = buffer[offset + 1]
+
+            var requested_index = -1
+            for i in range(event_count):
+                if self._counters[i].id() == event_id:
+                    requested_index = i
+                    break
+
+            if requested_index < 0:
+                raise Error(t"group read returned unknown event ID {event_id}")
+            if seen[requested_index]:
+                raise Error(
+                    t"group read returned duplicate event ID {event_id}"
+                )
+
+            values[requested_index] = value
+            seen[requested_index] = True
+
+        return Counts(values^, buffer[1], buffer[2])

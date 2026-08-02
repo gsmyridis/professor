@@ -30,7 +30,7 @@ struct _FileHandle(Movable):
             var err = get_errno()
             # Still mark as closed even on error
             self._fd = -1
-            raise Error("Failed to close file: " + String(err))
+            raise Error("failed to close file: " + String(err))
 
         self._fd = -1
 
