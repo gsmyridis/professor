@@ -58,9 +58,9 @@ struct WallClock(Instrument):
 # Invariant Timestamp Counter
 # ===----------------------------------------------------------------------=== #
 
+
 @fieldwise_init
 struct Cycles(ImplicitlyCopyable, Metric):
-
     var value: UInt64
 
     def __init__(out self):
@@ -93,7 +93,6 @@ struct Cycles(ImplicitlyCopyable, Metric):
 
 @fieldwise_init
 struct InvariantTSC(Instrument):
-
     comptime MetricType = Cycles
 
     var value: UInt64

@@ -18,7 +18,7 @@ struct PerfEventCountAndTime(Copyable, Defaultable):
         self.time_running = 0
 
 
-struct PerfEventGroupReadHeader(Copyable, Defaultable):
+struct GroupHeader(Copyable, Defaultable):
     """Header for a group read with enabled and running time metadata.
 
     Use with `PERF_FORMAT_GROUP | PERF_FORMAT_ID |

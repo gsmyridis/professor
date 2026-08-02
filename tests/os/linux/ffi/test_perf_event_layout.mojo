@@ -21,9 +21,11 @@ from professor.os.linux.ffi.attr import (
     PERF_COUNT_HW_CACHE_RESULT_MISS,
     PERF_COUNT_HW_CPU_CYCLES,
     PERF_FORMAT_MAX,
+)
+from professor.os.linux._sys import (
     PerfEventAttr,
-    perf_hw_cache_config,
-    perf_hw_event_config,
+    perf_hardware_cache_config,
+    perf_hardware_event_config,
 )
 from professor.os.linux.ffi.counting import (
     PerfEventCountAndTime,
@@ -140,15 +142,15 @@ def test_hardware_cache_event_constants_and_encoding() raises:
     assert_equal(PERF_COUNT_HW_CACHE_RESULT_MAX, 2)
 
     assert_equal(
-        perf_hw_event_config(PERF_COUNT_HW_CPU_CYCLES),
+        perf_hardware_event_config(PERF_COUNT_HW_CPU_CYCLES),
         PERF_COUNT_HW_CPU_CYCLES,
     )
     assert_equal(
-        perf_hw_event_config(PERF_COUNT_HW_CPU_CYCLES, pmu_type=7),
+        perf_hardware_event_config(PERF_COUNT_HW_CPU_CYCLES, pmu_type=7),
         UInt64(7) << 32,
     )
     assert_equal(
-        perf_hw_cache_config(
+        perf_hardware_cache_config(
             PERF_COUNT_HW_CACHE_L1D,
             PERF_COUNT_HW_CACHE_OP_READ,
             PERF_COUNT_HW_CACHE_RESULT_MISS,
@@ -156,7 +158,7 @@ def test_hardware_cache_event_constants_and_encoding() raises:
         UInt64(0x10000),
     )
     assert_equal(
-        perf_hw_cache_config(
+        perf_hardware_cache_config(
             PERF_COUNT_HW_CACHE_LL,
             PERF_COUNT_HW_CACHE_OP_PREFETCH,
             PERF_COUNT_HW_CACHE_RESULT_ACCESS,

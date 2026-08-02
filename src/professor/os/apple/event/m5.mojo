@@ -1,4 +1,4 @@
-from .event import Event
+from professor.os.event import Event
 
 
 @fieldwise_init

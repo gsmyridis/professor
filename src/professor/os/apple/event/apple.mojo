@@ -1,6 +1,6 @@
 from professor.os.apple.cpu import Cpu
+from professor.os.event import Event
 
-from .event import Event
 from .cpu import CpuEvent
 
 

@@ -1,4 +1,3 @@
-from .event import Event
 from .cpu import CpuEvent
 from .m1 import M1Event
 from .m2 import M2Event

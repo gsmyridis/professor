@@ -14,7 +14,7 @@ from .ffi.kperf_data import (
     kpep_db_counters_count,
 )
 from .cpu import Cpu, Architecture
-from .event import Event, DatabaseEvent
+from .event import DatabaseEvent
 from .classes import Classes
 
 from professor.ffi_utils import (
@@ -22,6 +22,7 @@ from professor.ffi_utils import (
     cstr_to_slice,
     cstr_to_string,
 )
+from professor.os.event import Event
 
 
 struct Database(Movable):

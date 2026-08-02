@@ -39,7 +39,7 @@ from professor.os.linux.ffi import (
     perf_event_open,
     perf_event_read,
     perf_event_reset,
-    perf_hw_cache_config,
+    perf_hardware_cache_config,
 )
 
 comptime EVENT_COUNT = 3
@@ -190,7 +190,7 @@ def measure() raises:
     )
     group.l1d_read_misses = _open_event(
         PERF_TYPE_HW_CACHE,
-        perf_hw_cache_config(
+        perf_hardware_cache_config(
             PERF_COUNT_HW_CACHE_L1D,
             PERF_COUNT_HW_CACHE_OP_READ,
             PERF_COUNT_HW_CACHE_RESULT_MISS,

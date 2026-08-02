@@ -39,6 +39,7 @@ test-apple = """
 
 # Test Arch
 test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
+test-x86 = """mojo run -I src tests/arch/test_x86.mojo"""
 
 test = { depends-on = [
   "test-profile",
