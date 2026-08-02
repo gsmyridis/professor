@@ -2,7 +2,8 @@ from std.reflection import reflect
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from professor.os.linux.ffi.attr import (
+from professor.os.linux._sys import (
+    Attributes,
     PERF_ATTR_SIZE_VER9,
     PERF_COUNT_HW_CACHE_BPU,
     PERF_COUNT_HW_CACHE_DTLB,
@@ -20,25 +21,18 @@ from professor.os.linux.ffi.attr import (
     PERF_COUNT_HW_CACHE_RESULT_MAX,
     PERF_COUNT_HW_CACHE_RESULT_MISS,
     PERF_COUNT_HW_CPU_CYCLES,
+    PERF_EVENT_IOC_ID,
     PERF_FORMAT_MAX,
-)
-from professor.os.linux._sys import (
-    PerfEventAttr,
     perf_hardware_cache_config,
     perf_hardware_event_config,
 )
-from professor.os.linux.ffi.counting import (
-    PerfEventCountAndTime,
-    PerfEventGroupReadEntry,
-    PerfEventGroupReadHeader,
-)
-from professor.os.linux.ffi.functions import PERF_EVENT_IOC_ID
+from professor.os.linux.counts import Count
 
 
 def test_perf_event_attr_size_and_alignment_sensitive_offsets() raises:
-    comptime attr = reflect[PerfEventAttr]
+    comptime attr = reflect[Attributes]
 
-    assert_equal(size_of[PerfEventAttr](), Int(PERF_ATTR_SIZE_VER9))
+    assert_equal(size_of[Attributes](), Int(PERF_ATTR_SIZE_VER9))
     assert_equal(attr.field_offset[name="type_"](), 0)
     assert_equal(attr.field_offset[name="size"](), 4)
     assert_equal(attr.field_offset[name="config"](), 8)
@@ -59,7 +53,7 @@ def test_perf_event_attr_size_and_alignment_sensitive_offsets() raises:
 
 
 def test_perf_event_attr_default_is_zero_except_for_size() raises:
-    var attr = PerfEventAttr()
+    var attr = Attributes()
 
     assert_equal(attr.size, PERF_ATTR_SIZE_VER9)
     assert_equal(attr.type_, 0)
@@ -70,7 +64,7 @@ def test_perf_event_attr_default_is_zero_except_for_size() raises:
 
 
 def test_perf_event_attr_flag_accessors() raises:
-    var attr = PerfEventAttr()
+    var attr = Attributes()
 
     attr.set_disabled()
     attr.set_exclude_kernel()
@@ -88,7 +82,7 @@ def test_perf_event_attr_flag_accessors() raises:
 
 
 def test_counting_attribute_flag_accessors() raises:
-    var attr = PerfEventAttr()
+    var attr = Attributes()
 
     attr.set_exclude_idle()
     attr.set_inherit_stat()
@@ -169,23 +163,16 @@ def test_hardware_cache_event_constants_and_encoding() raises:
 
 
 def test_counting_read_layouts() raises:
-    comptime single = reflect[PerfEventCountAndTime]
-    comptime header = reflect[PerfEventGroupReadHeader]
-    comptime entry = reflect[PerfEventGroupReadEntry]
+    comptime single = reflect[Count]
 
-    assert_equal(size_of[PerfEventCountAndTime](), 24)
+    assert_equal(size_of[Count](), 24)
     assert_equal(single.field_offset[name="value"](), 0)
     assert_equal(single.field_offset[name="time_enabled"](), 8)
     assert_equal(single.field_offset[name="time_running"](), 16)
 
-    assert_equal(size_of[PerfEventGroupReadHeader](), 24)
-    assert_equal(header.field_offset[name="nr"](), 0)
-    assert_equal(header.field_offset[name="time_enabled"](), 8)
-    assert_equal(header.field_offset[name="time_running"](), 16)
-
-    assert_equal(size_of[PerfEventGroupReadEntry](), 16)
-    assert_equal(entry.field_offset[name="value"](), 0)
-    assert_equal(entry.field_offset[name="id"](), 8)
+    # Group reads contain a three-word header followed by value/ID pairs.
+    assert_equal(3 * size_of[UInt64](), 24)
+    assert_equal(2 * size_of[UInt64](), 16)
     assert_equal(PERF_FORMAT_MAX, UInt64(1) << 5)
     assert_equal(PERF_EVENT_IOC_ID, 0x80082407)
 

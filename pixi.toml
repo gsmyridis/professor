@@ -18,6 +18,7 @@ example-counters-repetition = "mojo run -I src -I examples/counters examples/cou
 
 # Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
+test-linux-config = "mojo run -I src tests/os/linux/test_config.mojo"
 test-linux-ffi-layout = "mojo run -I src tests/os/linux/ffi/test_perf_event_layout.mojo"
 test-linux-misc = "mojo run -I src tests/os/linux/test_misc.mojo"
 

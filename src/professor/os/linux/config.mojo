@@ -114,5 +114,8 @@ struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     monitoring may require additional permissions.
     """
 
+    def __or__(self, other: Self) -> Self:
+        return Self(self.value | other.value)
+
     def __contains__(self, other: Self) -> Bool:
-        return self.value & other.value
+        return (self.value & other.value) == other.value

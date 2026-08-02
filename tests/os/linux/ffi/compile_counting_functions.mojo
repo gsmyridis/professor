@@ -2,9 +2,9 @@
 
 from std.ffi import c_int, c_size_t, c_ulong
 
-from professor.os.linux.ffi import (
+from professor.os.linux._sys import (
+    Attributes,
     PERF_IOC_FLAG_GROUP,
-    PerfEventAttr,
     perf_event_disable,
     perf_event_enable,
     perf_event_id,
@@ -16,7 +16,7 @@ from professor.os.linux.ffi import (
 
 def main():
     """Instantiate every Linux counting wrapper for compile-time coverage."""
-    var attr = PerfEventAttr()
+    var attr = Attributes()
     var id: UInt64 = 0
     var values: UInt64 = 0
 
