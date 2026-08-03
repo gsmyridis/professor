@@ -1,5 +1,5 @@
 from professor.os.event import Event
-from professor.os.linux._sys import (
+from professor.os.linux.sys import (
     PERF_TYPE_HARDWARE,
     PERF_TYPE_SOFTWARE,
     PERF_TYPE_HW_CACHE,

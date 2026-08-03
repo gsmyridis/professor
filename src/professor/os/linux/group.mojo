@@ -3,7 +3,7 @@ from std.ffi import c_int, c_size_t
 from std.sys.info import size_of
 
 from .counter import _CounterHandle, _open_event, NO_GROUP
-from ._sys import (
+from .sys import (
     PERF_FORMAT_GROUP,
     PERF_FORMAT_ID,
     PERF_FORMAT_TOTAL_TIME_ENABLED,
@@ -176,6 +176,7 @@ struct Group(Movable, Sized):
 # ===------------------------------------------------------------------------===
 
 
+@explicit_destroy("The group builder must be consumed with: .build()")
 struct GroupBuilder(Movable, Sized):
     """Build an owned group from independently configured counters."""
 

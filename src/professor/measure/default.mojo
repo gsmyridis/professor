@@ -4,7 +4,7 @@ from std.os import abort
 
 from .instrument import Instrument, Metric
 
-from professor.arch.aarch64 import cntpct_el0
+from professor.arch import read_cycle_counter
 
 # ===----------------------------------------------------------------------=== #
 # Wall-clock measurer
@@ -101,7 +101,4 @@ struct InvariantTSC(Instrument):
         return self.__init__(0)
 
     def measure(mut self) -> Self.MetricType:
-        if CompilationTarget.is_x86():
-            abort("Not implemented for x86")
-        else:
-            return Cycles(cntpct_el0())
+        return Cycles(read_cycle_counter())

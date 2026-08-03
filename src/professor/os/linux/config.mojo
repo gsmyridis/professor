@@ -1,4 +1,4 @@
-from ._sys import (
+from .sys import (
     PERF_FLAG_FD_CLOEXEC,
     PERF_FLAG_FD_NO_GROUP,
     PERF_FLAG_FD_OUTPUT,

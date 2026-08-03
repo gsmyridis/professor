@@ -2,7 +2,7 @@ from std.reflection import reflect
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from professor.os.linux._sys import (
+from professor.os.linux.sys import (
     Attributes,
     PERF_ATTR_SIZE_VER9,
     PERF_COUNT_HW_CACHE_BPU,

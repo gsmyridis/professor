@@ -35,7 +35,7 @@ test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
 test-perf = """
     mojo run -I src tests/os/linux/test_config.mojo \
     && mojo run -I src tests/os/linux/test_counts.mojo \
-    && mojo run -I src tests/os/linux/ffi/test_perf_event_layout.mojo \
+    && mojo run -I src tests/os/linux/test_perf_event_layout.mojo \
 """
 test-kperf = """
     mojo run -I src tests/os/apple/test_cpu.mojo \

@@ -2,7 +2,7 @@ from std.ffi import c_int, c_size_t, c_ulong
 from std.sys._libc_errno import get_errno
 from std.sys.info import size_of
 
-from ._sys import (
+from .sys import (
     PERF_FORMAT_TOTAL_TIME_ENABLED,
     PERF_FORMAT_TOTAL_TIME_RUNNING,
     perf_event_open,
