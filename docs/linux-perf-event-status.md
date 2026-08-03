@@ -22,8 +22,7 @@ The low-level counting path is implemented:
 - `perf_event_open`, enable, disable, reset, refresh, event-ID lookup, and
   group-wide ioctl operation.
 - `read(2)` into caller-owned 64-bit storage.
-- Stable layouts for a single count with multiplexing times and a grouped
-  count containing value/ID pairs.
+- Fixed single and grouped read formats with multiplexing times and event IDs.
 - Process, CPU, and cgroup syscall selectors.
 
 The recommended single-counter read format is:
@@ -32,26 +31,35 @@ The recommended single-counter read format is:
 PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING
 ```
 
-It produces `PerfEventCountAndTime`. The recommended group read format is:
+The recommended group read format is:
 
 ```text
 PERF_FORMAT_GROUP | PERF_FORMAT_ID |
 PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING
 ```
 
-It produces a `PerfEventGroupReadHeader` followed by `nr`
-`PerfEventGroupReadEntry` values. `time_enabled` and `time_running` must be
-retained so callers can detect and scale multiplexed counts.
+It produces a three-word header followed by `nr` value/ID pairs.
+`time_enabled` and `time_running` are retained so callers can detect and scale
+multiplexed counts.
 
-## Counting work above the FFI
+## User-facing counting
 
-These items are not required to access counting through the raw bindings, but
-remain necessary for a complete user-facing Linux backend:
+The owned counting layer implements:
+
+- Standalone `Counter` ownership, control, reads, and multiplexing correction.
+- `CounterConfig` values that independently select each event's execution
+  modes, virtualization contexts, and idle-task behavior.
+- `GroupBuilder`, which owns a hidden dummy leader and opens independently
+  configured group members.
+- Opaque `CounterToken` identities returned by `GroupBuilder.add()`.
+- Atomic group control and reads, with results addressable by token.
+- Removal of builder or group members by closing their owned descriptors.
+- Validation of read sizes, event counts, unknown IDs, and duplicate IDs.
+
+The remaining counting work is:
 
 | Missing surface | Description |
 | --- | --- |
-| Owned `Counter` and `Group` types | Manage file-descriptor lifetime, enforce group-leader/member construction, translate `errno`, and expose atomic enable/reset/disable operations. |
-| Read parsing and scaling | Allocate group buffers, validate short reads, associate values with event IDs, and scale multiplexed counts without overflowing intermediate arithmetic. |
 | PMU discovery | Read `/sys/bus/event_source/devices/*/{type,format,events}` so named core, uncore, and vendor-specific raw events can be configured without hand-encoding values. |
 | mmap/RDPMC fast reads | Map `perf_event_mmap_page` and implement its seqlock protocol for syscall-free counter reads where the kernel enables user PMU access. |
 | Linux runtime tests | Exercise real opens, groups, multiplexing, and permission failures on x86-64 and AArch64 Linux. Current tests verify portable ABI layouts and pure encodings on macOS. |

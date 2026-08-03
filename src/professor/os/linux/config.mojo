@@ -5,6 +5,7 @@ from ._sys import (
     PERF_FLAG_PID_CGROUP,
     Attributes,
 )
+from ._event import PerfEvent
 
 
 comptime Config = Attributes
@@ -48,6 +49,32 @@ struct Virtualization(
 
     def includes(self, context: Self) -> Bool:
         return (self._mask & context._mask) == context._mask
+
+
+struct CounterConfig(Copyable, Writable):
+    """Configuration for one unopened performance counter.
+
+    A group may contain counters with different configurations. Target process,
+    CPU, and file-descriptor flags remain properties of the group itself.
+    """
+
+    var event: PerfEvent
+    var mode: CountMode
+    var virtualization: Virtualization
+    var exclude_idle: Bool
+
+    def __init__(
+        out self,
+        event: PerfEvent,
+        *,
+        mode: CountMode = CountMode.Userspace,
+        virtualization: Virtualization = Virtualization.Host,
+        exclude_idle: Bool = False,
+    ):
+        self.event = event
+        self.mode = mode
+        self.virtualization = virtualization
+        self.exclude_idle = exclude_idle
 
 
 @fieldwise_init

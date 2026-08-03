@@ -14,66 +14,34 @@ from ._sys import (
 )
 from ._file import _FileHandle
 from ._event import PerfEvent
-from .config import Config, CountMode, Virtualization, Flag, CpuId, ProcessId
+from .config import (
+    Config,
+    CounterConfig,
+    CountMode,
+    Virtualization,
+    Flag,
+    CpuId,
+    ProcessId,
+)
 from .counts import Count
 
 comptime NO_GROUP = -1
 
 
-def _open_event(
-    event: PerfEvent,
-    var config: Config,
-    cpu: CpuId,
-    process: ProcessId,
-    flag: Flag,
-    mode: CountMode,
-    virtualization: Virtualization,
-    group_leader_fd: c_int,
-) raises -> _FileHandle:
-    config.type_ = event.type()
-    config.config = event.config()
-
-    config.set_disabled(True)
-    config.set_exclude_idle(False)
-
-    config.set_exclude_user(not mode.includes(CountMode.Userspace))
-    config.set_exclude_kernel(not mode.includes(CountMode.Kernel))
-    config.set_exclude_hv(not mode.includes(CountMode.Hypervisor))
-
-    config.set_exclude_host(not virtualization.includes(Virtualization.Host))
-    config.set_exclude_guest(not virtualization.includes(Virtualization.Guest))
-
-    var fd = perf_event_open(
-        UnsafePointer(to=config),
-        c_int(process.value),
-        c_int(cpu.value),
-        group_leader_fd,
-        c_ulong(flag.value),
-    )
-    if fd < 0:
-        var err = get_errno()
-        raise Error(t"perf_event_open({event.name()}) failed: {err}")
-
-    return _FileHandle(unsafe_fd=fd)
+# ===------------------------------------------------------------------------===
+# Counter
+# ===------------------------------------------------------------------------===
 
 
 struct Counter(Movable):
-    # ===--------------------------------------------------------------------===
-    # Fields
-    # ===--------------------------------------------------------------------===
+    """An independently controlled counter opened from a `CounterConfig`."""
 
-    var _event: PerfEvent
-    """Performance event description."""
+    var _handle: _CounterHandle
+    """The opened perf-event handle owned by this counter.
 
-    var _file: _FileHandle
-    """The perf-event file handle for this counter, returned by `perf_event_open`.
-
-    When a `Counter` is dropped, this file is dropped, and the kernel
-    removes the counter from any group it belongs to.
+    When a `Counter` is dropped, its file is dropped and the kernel removes the
+    corresponding event.
     """
-
-    var _id: UInt64
-    """The unique id assigned to this counter by the kernel."""
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
@@ -81,38 +49,28 @@ struct Counter(Movable):
 
     def __init__(
         out self,
-        event: PerfEvent,
+        counter_config: CounterConfig,
         *,
         cpu: CpuId = CpuId.Any,
         process: ProcessId = ProcessId.Calling,
         flag: Flag = Flag.CloseOnExec,
-        mode: CountMode = CountMode.Userspace,
-        virtualization: Virtualization = Virtualization.Host,
     ) raises:
+        """Open a standalone counter with the requested target settings."""
         var config = Config()
         config.read_format = (
             PERF_FORMAT_TOTAL_TIME_ENABLED | PERF_FORMAT_TOTAL_TIME_RUNNING
         )
 
         var file = _open_event(
-            event, config^, cpu, process, flag, mode, virtualization, NO_GROUP
+            counter_config,
+            config^,
+            cpu,
+            process,
+            flag,
+            NO_GROUP,
+            disabled=True,
         )
-        self = Self(event=event, unsafe_file=file^)
-
-    def __init__(
-        out self, *, event: PerfEvent, var unsafe_file: _FileHandle
-    ) raises:
-        """Initialises a `Counter` from the performance event's file handle."""
-        self._event = event
-
-        self._file = unsafe_file^
-        self._id = 0
-        if (
-            perf_event_id(self._file._get_raw_fd(), UnsafePointer(to=self._id))
-            != 0
-        ):
-            var err = get_errno()
-            raise Error(t"failed to get performance event id: {err}")
+        self._handle = _CounterHandle(counter_config.event, file^)
 
     # ===--------------------------------------------------------------------===
     # Accessor methods
@@ -124,15 +82,15 @@ struct Counter(Movable):
         Returns:
             The counter's unique id.
         """
-        return self._id
+        return self._handle.id()
 
     def raw_fd(self) -> c_int:
         """Returns the raw file descriptor.
 
         Returns:
-            The counter's fild descriptor.
+            The counter's file descriptor.
         """
-        return self._file._get_raw_fd()
+        return self._handle.raw_fd()
 
     # ===--------------------------------------------------------------------===
     # Control methods
@@ -199,3 +157,97 @@ struct Counter(Movable):
             )
 
         return Count(buffer[0], buffer[1], buffer[2])
+
+
+# ===------------------------------------------------------------------------===
+# Counter handle
+# ===------------------------------------------------------------------------===
+
+
+struct _CounterHandle(Movable):
+    """Internal ownership of one opened perf event."""
+
+    var _event: PerfEvent
+    var _file: _FileHandle
+    var _id: UInt64
+
+    # ===--------------------------------------------------------------------===
+    # Lifecycle methods
+    # ===--------------------------------------------------------------------===
+
+    def __init__(out self, event: PerfEvent, var file: _FileHandle) raises:
+        self._event = event
+        self._file = file^
+        self._id = 0
+        if (
+            perf_event_id(self._file._get_raw_fd(), UnsafePointer(to=self._id))
+            != 0
+        ):
+            var err = get_errno()
+            raise Error(t"failed to get performance event id: {err}")
+
+    def close(mut self) raises:
+        self._file.close()
+
+    # ===--------------------------------------------------------------------===
+    # Accessor methods
+    # ===--------------------------------------------------------------------===
+
+    def id(self) -> UInt64:
+        return self._id
+
+    def raw_fd(self) -> c_int:
+        return self._file._get_raw_fd()
+
+
+# ===------------------------------------------------------------------------===
+# Open event helper
+# ===------------------------------------------------------------------------===
+
+
+def _open_event(
+    counter_config: CounterConfig,
+    var config: Config,
+    cpu: CpuId,
+    process: ProcessId,
+    flag: Flag,
+    group_leader_fd: c_int,
+    *,
+    disabled: Bool,
+) raises -> _FileHandle:
+    var event = counter_config.event
+    config.type_ = event.type()
+    config.config = event.config()
+
+    config.set_disabled(disabled)
+    config.set_exclude_idle(counter_config.exclude_idle)
+
+    config.set_exclude_user(
+        not counter_config.mode.includes(CountMode.Userspace)
+    )
+    config.set_exclude_kernel(
+        not counter_config.mode.includes(CountMode.Kernel)
+    )
+    config.set_exclude_hv(
+        not counter_config.mode.includes(CountMode.Hypervisor)
+    )
+
+    config.set_exclude_host(
+        not counter_config.virtualization.includes(Virtualization.Host)
+    )
+    config.set_exclude_guest(
+        not counter_config.virtualization.includes(Virtualization.Guest)
+    )
+
+    var fd = perf_event_open(
+        UnsafePointer(to=config),
+        c_int(process.value),
+        c_int(cpu.value),
+        group_leader_fd,
+        c_ulong(flag.value),
+    )
+    if fd < 0:
+        var err = get_errno()
+        raise Error(t"perf_event_open({event.name()}) failed: {err}")
+
+    return _FileHandle(unsafe_fd=fd)

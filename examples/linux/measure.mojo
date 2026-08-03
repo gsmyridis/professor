@@ -8,7 +8,7 @@ Access to performance counters depends on the host's perf security policy.
 """
 
 from std.benchmark import black_box
-from professor.os.linux import Group, PerfEvent
+from professor.os.linux import CounterConfig, GroupBuilder, PerfEvent
 
 comptime ELEMENT_COUNT = 1 << 20
 comptime POINTER_STRIDE = 8191
@@ -36,12 +36,13 @@ def measure() raises:
     """Measure the example workload with one simultaneously scheduled group."""
     var data = _make_pointer_chase()
 
-    var events: List[PerfEvent] = [
-        PerfEvent.CpuCycles,
-        PerfEvent.Instructions,
-        PerfEvent.L1DReadMiss,
-    ]
-    var group = Group(events)
+    var builder = GroupBuilder()
+    var cycles_token = builder.add(CounterConfig(PerfEvent.CpuCycles))
+    var instructions_token = builder.add(CounterConfig(PerfEvent.Instructions))
+    var l1d_read_misses_token = builder.add(
+        CounterConfig(PerfEvent.L1DReadMiss)
+    )
+    var group = builder^.build()
     group.reset()
     group.enable()
     var result = _pointer_chase(data)
@@ -54,9 +55,9 @@ def measure() raises:
             "together on this CPU"
         )
 
-    var cycles = counts.count(0)
-    var instructions = counts.count(1)
-    var l1d_read_misses = counts.count(2)
+    var cycles = counts.count(cycles_token)
+    var instructions = counts.count(instructions_token)
+    var l1d_read_misses = counts.count(l1d_read_misses_token)
 
     print("workload result:", result)
     print("time enabled (ns):", counts.time_enabled)
