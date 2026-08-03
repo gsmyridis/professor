@@ -6,21 +6,24 @@ channels = [
   "conda-forge"
 ]
 name = "professor"
-platforms = ["osx-arm64", "linux-64"]
+platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "0.1.0"
 
+[dependencies]
+mojo = "==1.0.0b3.dev2026070806"
+
+[environments]
+dev = ["dev"]
+examples = ["examples"]
+
+# ===------------------------------------------------------------------------===
+# Main tasks
+# ===------------------------------------------------------------------------===
+
 [tasks]
-format = "mojo format ."
+format = "pixi run mojo format ."
 
-# Hardware counters need elevated privileges: sudo pixi run example-counters
-example-counters = "mojo run -I src examples/counters/main.mojo"
-example-counters-repetition = "mojo run -I src -I examples/counters examples/counters/repetition.mojo"
-
-# Tests
 test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
-test-linux-config = "mojo run -I src tests/os/linux/test_config.mojo"
-test-linux-ffi-layout = "mojo run -I src tests/os/linux/ffi/test_perf_event_layout.mojo"
-test-linux-misc = "mojo run -I src tests/os/linux/test_misc.mojo"
 
 test-report = """
     mojo run -I src tests/report/test_table.mojo \
@@ -29,32 +32,59 @@ test-report = """
 
 test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
 
-# Test OS
-test-apple = """
+test-perf = """
+    mojo run -I src tests/os/linux/test_config.mojo \
+    && mojo run -I src tests/os/linux/ffi/test_perf_event_layout.mojo \
+"""
+test-kperf = """
     mojo run -I src tests/os/apple/test_cpu.mojo \
     && mojo run -I src tests/os/apple/test_database.mojo \
     && mojo run -I src tests/os/apple/test_config.mojo \
     && mojo run -I src tests/os/apple/test_event.mojo \
     && mojo run -I src tests/os/apple/ffi/test_kperf_data_layout.mojo
 """
+test-backend = """
+    {% if pixi.is_linux %}
+    pixi run test-perf
+    {% elif pixi.is_osx %}
+    pixi run test-kperf
+    {% else %}
+    echo unsupported platform && exit 1
+    {% endif %}
+"""
 
-# Test Arch
 test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
 test-x86 = """mojo run -I src tests/arch/test_x86.mojo"""
+test-arch = """
+    {% if pixi.platform == "linux-64" or pixi.platform == "osx-64" %}
+    pixi run test-x86
+    {% elif pixi.platform == "linux-aarch64" or pixi.platform == "osx-arm64" %}
+    pixi run test-aarch64
+    {% else %}
+    echo unsapported architecture && exit 1
+    {% endif %}
+"""
 
 test = { depends-on = [
   "test-profile",
   "test-report",
   "test-reptest",
-  "test-apple",
-  "test-aarch64",
+  "test-backend",
+  "test-arch",
 ] }
 
-[dependencies]
-mojo = ">=1.0.0b3.dev2026070806,<2"
+# ===------------------------------------------------------------------------===
+# Dev
+# ===------------------------------------------------------------------------===
+
+[feature.dev.dependencies]
+prek = "*"
+
+# ===------------------------------------------------------------------------===
+# Examples
+# ===------------------------------------------------------------------------===
 
 [feature.examples.dependencies]
-mojo = "==1.0.0b3.dev2026070806"
 numpy = ">=2.3.3,<3"
 python = ">=3.13,<3.15"
 
@@ -68,5 +98,6 @@ haversine-test-parser = """
     mojo run -I src -I examples/haversine/parser examples/haversine/test_parser.mojo
 """
 
-[environments]
-examples = ["examples"]
+# Hardware counters need elevated privileges: sudo pixi run example-counters
+example-counters = "mojo run -I src examples/counters/main.mojo"
+example-counters-repetition = "mojo run -I src -I examples/counters examples/counters/repetition.mojo"

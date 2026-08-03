@@ -66,17 +66,9 @@ def measure() raises:
     print("L1D read misses:", l1d_read_misses.value)
 
     if counts.time_running != counts.time_enabled:
-        print(
-            "scaled cycles:", cycles.scaled()
-        )
-        print(
-            "scaled retired instructions:",
-            instructions.scaled()
-        )
-        print(
-            "scaled L1D read misses:",
-            l1d_read_misses.scaled()
-        )
+        print("scaled cycles:", cycles.scaled())
+        print("scaled retired instructions:", instructions.scaled())
+        print("scaled L1D read misses:", l1d_read_misses.scaled())
 
 
 def main() raises:
