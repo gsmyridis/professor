@@ -1,2 +1,2 @@
-from ._sampler import Sampler
-from ._thread import ThreadSampler
+from .sampler import Sampler
+from .thread import ThreadSampler

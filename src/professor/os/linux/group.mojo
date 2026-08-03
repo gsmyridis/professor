@@ -15,8 +15,8 @@ from .sys import (
     perf_event_reset,
 )
 from .config import Config, CounterConfig, Flag, CpuId, ProcessId
-from ._event import PerfEvent
-from ._token import CounterToken
+from .event import PerfEvent
+from .token import CounterToken
 from .counts import Counts
 
 # ===------------------------------------------------------------------------===

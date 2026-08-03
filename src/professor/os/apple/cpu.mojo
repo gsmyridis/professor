@@ -1,7 +1,7 @@
 from std.sys import CompilationTarget
 from std.ffi import c_char, c_size_t
 
-from .ffi.kperf import kpc_cpu_string
+from .sys.kperf import kpc_cpu_string
 
 # ===------------------------------------------------------------------------===
 # CPU

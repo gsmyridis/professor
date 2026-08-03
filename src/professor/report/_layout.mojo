@@ -11,8 +11,8 @@ from std.os.path import dirname
 from std.pathlib import cwd, Path
 from std.reflection import SourceLocation
 
-from ._stat import ZoneStat
-from ._table import Align, Cell, Color, Column, Table, TableStyle
+from .stat import ZoneStat
+from .table import Align, Cell, Color, Column, Table, TableStyle
 
 
 comptime _ZONE_LABEL = "Zone"

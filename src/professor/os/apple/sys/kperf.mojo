@@ -24,7 +24,7 @@ from std.os import abort
 from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
 from std.memory import OptionalUnsafePointer
 
-from professor.ffi_utils import cast_optional_mut_ptr
+from .ffi import _cast_optional_mut_ptr
 
 # ===-----------------------------------------------------------------------===#
 # Type Aliases
@@ -332,7 +332,7 @@ def kpc_get_cpu_counters[
     return _sym()[].kpc_get_cpu_counters(
         all_cpus,
         classes,
-        cast_optional_mut_ptr[MutUntrackedOrigin](cpu),
+        _cast_optional_mut_ptr[MutUntrackedOrigin](cpu),
         buf.unsafe_origin_cast[MutUntrackedOrigin](),
     )
 

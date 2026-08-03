@@ -12,8 +12,8 @@ from .sys import (
     perf_event_id,
     perf_event_read,
 )
-from ._file import _FileHandle
-from ._event import PerfEvent
+from .file import _FileHandle
+from .event import PerfEvent
 from .config import (
     Config,
     CounterConfig,

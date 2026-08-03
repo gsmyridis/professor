@@ -2,9 +2,7 @@ from std.benchmark import keep
 from std.time import perf_counter_ns
 from std.benchmark import black_box
 
-from professor.measure import Instrument, Metric
-from professor.measure.default import WallClock
-from professor.profile import Profiler
+from professor import Profiler, Instrument, Metric, WallClock
 
 
 # An instrument whose metric is empty and whose reading costs nothing: zone

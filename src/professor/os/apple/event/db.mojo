@@ -1,11 +1,11 @@
-from professor.os.apple.ffi.kperf_data import (
+from professor.os.apple.sys.kperf_data import (
     KPEPEvent,
     kpep_event_name,
     kpep_event_alias,
     kpep_event_description,
 )
 
-from professor.ffi_utils import (
+from professor.os.apple.sys.ffi import (
     ConstCStringPointer,
     cstr_to_slice,
     cstr_to_slice_opt,

@@ -2,7 +2,7 @@ from std.math import asin, cos, pi, sin, sqrt
 from std.pathlib import Path
 from std.sys import argv
 
-from professor.measure.default import WallClock
+from professor import WallClock
 
 from parser import (
     HaversineProfiler,

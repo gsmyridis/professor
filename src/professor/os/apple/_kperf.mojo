@@ -1,5 +1,5 @@
-from .ffi import kperf as ffi_kperf
-from .ffi.kperf import KPCConfig
+from .sys import kperf as sys_kperf
+from .sys.kperf import KPCConfig
 from std.ffi import c_char, c_int, c_size_t
 
 
@@ -14,7 +14,7 @@ def set_thread_counting(classes: UInt32) raises:
     Raises:
         When it fails to set the counting.
     """
-    if ffi_kperf.kpc_set_thread_counting(classes) != 0:
+    if sys_kperf.kpc_set_thread_counting(classes) != 0:
         raise Error("failed to set")
 
 
@@ -28,20 +28,20 @@ def get_thread_counting() -> UInt32:
         A combination of `KPC_CLASS_*_MASK` constants, or 0 if an error
         occurs or no class is set.
     """
-    return ffi_kperf.kpc_get_thread_counting()
+    return sys_kperf.kpc_get_thread_counting()
 
 
 @always_inline
 def set_counting(classes: UInt32) raises:
     """Sets PMC classes to enable global counting."""
-    if ffi_kperf.kpc_set_counting(classes) != 0:
+    if sys_kperf.kpc_set_counting(classes) != 0:
         raise Error("failed to set global counting")
 
 
 @always_inline
 def get_counting() -> UInt32:
     """Gets running PMC classes."""
-    return ffi_kperf.kpc_get_counting()
+    return sys_kperf.kpc_get_counting()
 
 
 @always_inline
@@ -60,7 +60,7 @@ def get_config_count(classes: UInt32) -> UInt32:
         The number of config registers, or 0 if an error occurs or no class
         is set.
     """
-    return ffi_kperf.kpc_get_config_count(classes)
+    return sys_kperf.kpc_get_config_count(classes)
 
 
 @always_inline
@@ -75,7 +75,7 @@ def get_counter_count(classes: UInt32) -> UInt32:
     Args:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
     """
-    return ffi_kperf.kpc_get_counter_count(classes)
+    return sys_kperf.kpc_get_counter_count(classes)
 
 
 @always_inline
@@ -88,7 +88,7 @@ def set_config(classes: UInt32, mut config: List[KPCConfig]) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer containing the config register values.
     """
-    if ffi_kperf.kpc_set_config(classes, config.unsafe_ptr()) != 0:
+    if sys_kperf.kpc_set_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to set config")
 
 
@@ -103,7 +103,7 @@ def get_config(classes: UInt32, mut config: List[KPCConfig]) raises:
         classes: A combination of `KPC_CLASS_*_MASK` constants.
         config: Buffer to receive the config register values.
     """
-    if ffi_kperf.kpc_get_config(classes, config.unsafe_ptr()) != 0:
+    if sys_kperf.kpc_get_config(classes, config.unsafe_ptr()) != 0:
         raise Error("failed to get config")
 
 
@@ -126,7 +126,7 @@ def get_cpu_counters(
         curcpu: Pointer to receive the current CPU id; may be null.
         buf: Buffer to receive counter values.
     """
-    if ffi_kperf.kpc_get_cpu_counters(all_cpus, classes, curcpu, buf) != 0:
+    if sys_kperf.kpc_get_cpu_counters(all_cpus, classes, curcpu, buf) != 0:
         raise Error("failed to get cpu counters")
 
 
@@ -142,7 +142,7 @@ def get_thread_counters[
             least `get_counter_count(classes)`.
         buf: Buffer to receive counter values.
     """
-    if ffi_kperf.kpc_get_thread_counters(tid, buf_count, buf) != 0:
+    if sys_kperf.kpc_get_thread_counters(tid, buf_count, buf) != 0:
         raise Error("failed to get thread counters")
 
 
@@ -153,7 +153,7 @@ def force_all_ctrs_set(val: c_int) raises:
     Args:
         val: 1 to acquire; 0 to release.
     """
-    if ffi_kperf.kpc_force_all_ctrs_set(val) != 0:
+    if sys_kperf.kpc_force_all_ctrs_set(val) != 0:
         raise Error(t"failed to set force_all_ctrs to {val}")
 
 
@@ -165,7 +165,7 @@ def force_all_ctrs_get() raises -> c_int:
         The current state.
     """
     var val: c_int = 0
-    var res = ffi_kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val))
+    var res = sys_kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val))
     if res != 0:
         raise Error("failed to get force_all_ctrs state")
 
@@ -179,7 +179,7 @@ def kperf_action_count_set(count: UInt32) raises:
     Args:
         count: Number of actions.
     """
-    if ffi_kperf.kperf_action_count_set(count) != 0:
+    if sys_kperf.kperf_action_count_set(count) != 0:
         raise Error(t"failed to set action count to {count}")
 
 
@@ -191,7 +191,7 @@ def kperf_action_count_get() raises -> UInt32:
         The number of actions.
     """
     var count: UInt32 = 0
-    var res = ffi_kperf.kperf_action_count_get(UnsafePointer(to=count))
+    var res = sys_kperf.kperf_action_count_get(UnsafePointer(to=count))
     if res != 0:
         raise Error("failed to get action count")
 
@@ -208,7 +208,7 @@ def kperf_action_samplers_set(actionid: UInt32, sample: UInt32) raises:
         actionid: Action id.
         sample: Combination of `KPERF_SAMPLER_*` constants.
     """
-    if ffi_kperf.kperf_action_samplers_set(actionid, sample) != 0:
+    if sys_kperf.kperf_action_samplers_set(actionid, sample) != 0:
         raise Error(t"failed to set samplers for action {actionid}")
 
 
@@ -223,7 +223,7 @@ def kperf_action_samplers_get(actionid: UInt32) raises -> UInt32:
         Combination of `KPERF_SAMPLER_*` constants.
     """
     var sample: UInt32 = 0
-    var res = ffi_kperf.kperf_action_samplers_get(
+    var res = sys_kperf.kperf_action_samplers_get(
         actionid, UnsafePointer(to=sample)
     )
     if res != 0:
@@ -240,7 +240,7 @@ def kperf_action_filter_set_by_task(actionid: UInt32, port: Int32) raises:
         actionid: Action id.
         port: Task port, or -1 to disable the filter.
     """
-    if ffi_kperf.kperf_action_filter_set_by_task(actionid, port) != 0:
+    if sys_kperf.kperf_action_filter_set_by_task(actionid, port) != 0:
         raise Error(t"failed to set task filter for action {actionid}")
 
 
@@ -252,7 +252,7 @@ def kperf_action_filter_set_by_pid(actionid: UInt32, pid: Int32) raises:
         actionid: Action id.
         pid: Process id, or -1 to disable the filter.
     """
-    if ffi_kperf.kperf_action_filter_set_by_pid(actionid, pid) != 0:
+    if sys_kperf.kperf_action_filter_set_by_pid(actionid, pid) != 0:
         raise Error(t"failed to set pid filter for action {actionid}")
 
 
@@ -263,7 +263,7 @@ def kperf_timer_count_set(count: UInt32) raises:
     Args:
         count: Number of timer triggers.
     """
-    if ffi_kperf.kperf_timer_count_set(count) != 0:
+    if sys_kperf.kperf_timer_count_set(count) != 0:
         raise Error(t"failed to set timer count to {count}")
 
 
@@ -275,7 +275,7 @@ def kperf_timer_count_get() raises -> UInt32:
         Pointer to receive the number of timer triggers.
     """
     var count: UInt32 = 0
-    var res = ffi_kperf.kperf_timer_count_get(UnsafePointer(to=count))
+    var res = sys_kperf.kperf_timer_count_get(UnsafePointer(to=count))
     if res != 0:
         raise Error("failed to get timer count")
 
@@ -285,7 +285,7 @@ def kperf_timer_count_get() raises -> UInt32:
 @always_inline
 def kperf_timer_period_set(timer_id: UInt32, period: UInt64) raises:
     """Sets a timer period."""
-    if ffi_kperf.kperf_timer_period_set(timer_id, period) != 0:
+    if sys_kperf.kperf_timer_period_set(timer_id, period) != 0:
         raise Error(t"failed to set {period} for timer {timer_id}")
 
 
@@ -293,7 +293,7 @@ def kperf_timer_period_set(timer_id: UInt32, period: UInt64) raises:
 def kperf_timer_period_get(timer_id: UInt32) raises -> UInt64:
     """Gets a timer period."""
     var period: UInt64 = 0
-    var res = ffi_kperf.kperf_timer_period_get(
+    var res = sys_kperf.kperf_timer_period_get(
         timer_id, UnsafePointer(to=period)
     )
     if res != 0:
@@ -304,7 +304,7 @@ def kperf_timer_period_get(timer_id: UInt32) raises -> UInt64:
 @always_inline
 def kperf_timer_action_set(timerid: UInt32, actionid: UInt32) raises:
     """Sets the action id associated with a timer."""
-    if ffi_kperf.kperf_timer_action_set(timerid, actionid) != 0:
+    if sys_kperf.kperf_timer_action_set(timerid, actionid) != 0:
         raise Error(t"failed to set action {actionid} for timer {timerid}")
 
 
@@ -316,7 +316,7 @@ def kperf_timer_action_get(timer_id: UInt32) raises -> UInt32:
         The action id associated with the timer.
     """
     var action_id: UInt32 = 0
-    var res = ffi_kperf.kperf_timer_action_get(
+    var res = sys_kperf.kperf_timer_action_get(
         timer_id, UnsafePointer(to=action_id)
     )
     if res != 0:
@@ -334,7 +334,7 @@ def kperf_sample_set(enabled: UInt32) raises:
     Args:
         enabled: Non-zero to enable sampling; 0 to disable it.
     """
-    if ffi_kperf.kperf_sample_set(enabled) != 0:
+    if sys_kperf.kperf_sample_set(enabled) != 0:
         raise Error("failed to set the sampling state")
 
 
@@ -346,7 +346,7 @@ def kperf_sample_get() raises -> UInt32:
         The sampling state.
     """
     var state: UInt32 = 0
-    var res = ffi_kperf.kperf_sample_get(UnsafePointer(to=state))
+    var res = sys_kperf.kperf_sample_get(UnsafePointer(to=state))
     if res != 0:
         raise Error("failed to get the sampling state")
 
@@ -356,7 +356,7 @@ def kperf_sample_get() raises -> UInt32:
 @always_inline
 def kperf_reset() raises:
     """Resets kperf: stops sampling, kdebug, timers, and actions."""
-    if ffi_kperf.kperf_reset() != 0:
+    if sys_kperf.kperf_reset() != 0:
         raise Error("failed to reset kperf")
 
 
@@ -369,7 +369,7 @@ def kperf_timer_pet_set(timerid: UInt32) raises:
     Args:
         timerid: Timer id.
     """
-    if ffi_kperf.kperf_timer_pet_set(timerid) != 0:
+    if sys_kperf.kperf_timer_pet_set(timerid) != 0:
         raise Error(t"failed to set PET timer with timer ID: {timerid}")
 
 
@@ -381,7 +381,7 @@ def kperf_timer_pet_get() raises -> UInt32:
         The timer ID.
     """
     var timer_id: UInt32 = 0
-    var res = ffi_kperf.kperf_timer_pet_get(UnsafePointer(to=timer_id))
+    var res = sys_kperf.kperf_timer_pet_get(UnsafePointer(to=timer_id))
     if res != 0:
         raise Error("failed to read the PET timer ID")
 
@@ -391,16 +391,16 @@ def kperf_timer_pet_get() raises -> UInt32:
 @always_inline
 def kperf_ns_to_ticks(ns: UInt64) -> UInt64:
     """Converts nanoseconds to CPU ticks."""
-    return ffi_kperf.kperf_ns_to_ticks(ns)
+    return sys_kperf.kperf_ns_to_ticks(ns)
 
 
 @always_inline
 def kperf_ticks_to_ns(ticks: UInt64) -> UInt64:
     """Converts CPU ticks to nanoseconds."""
-    return ffi_kperf.kperf_ticks_to_ns(ticks)
+    return sys_kperf.kperf_ticks_to_ns(ticks)
 
 
 @always_inline
 def kperf_tick_frequency() -> UInt64:
     """Gets the CPU tick frequency used by `mach_absolute_time`."""
-    return ffi_kperf.kperf_tick_frequency()
+    return sys_kperf.kperf_tick_frequency()

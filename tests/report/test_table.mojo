@@ -1,6 +1,6 @@
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
-from professor.report import (
+from professor.report.table import (
     Align,
     Cell,
     Color,

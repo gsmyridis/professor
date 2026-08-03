@@ -35,8 +35,7 @@ cache misses, branch behavior, retired instructions, and more.
 ## Quick Start
 
 ```mojo
-from professor import GlobalProfiler
-from professor.measure.default import WallClock
+from professor import GlobalProfiler, WallClock
 
 comptime Prof = GlobalProfiler[WallClock]
 
@@ -91,8 +90,7 @@ configured number of consecutive runs produce no new minimum in any metric
 component:
 
 ```mojo
-from professor import RepetitionTester
-from professor.measure.default import WallClock
+from professor import RepetitionTester, WallClock
 
 
 def read_file() raises:
@@ -125,8 +123,7 @@ Redirected output receives only the final table. `run()` returns the accumulated
 registry. Separate values are independent, even when they have the same type:
 
 ```mojo
-from professor.profile import Profiler
-from professor.measure.default import WallClock
+from professor.profile import Profiler, WallClock
 
 var parsing_profiler = Profiler[WallClock]()
 var compute_profiler = Profiler[WallClock, Capacity=16]()
@@ -147,8 +144,7 @@ import them wherever you instrument:
 
 ```mojo
 # profile.mojo
-from professor.profile import GlobalProfiler
-from professor.measure.default import WallClock
+from professor.profile import GlobalProfiler, WallClock
 
 comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
 ```
@@ -254,13 +250,27 @@ inner  main.mojo:56:28      1       2500       2500      2500    14.3%
 ```
 
 Separate tables rather than stacked rows, because the interesting comparison
-is down a column — which zone dominates *this* metric — and the answer differs
+is down a column — which zone dominates _this_ metric — and the answer differs
 per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
 same. Each table can therefore also be read, and eventually sorted, along its
 own axis. Percentages are computed per component, each against the
 corresponding component of the program total.
 
 A metric with one component yields exactly one table, titled `Program total:`.
+
+### Table customization
+
+`Report.tables()` returns copies of the rendered tables for inspection or
+custom rendering. Table types live in the explicit `professor.report.table`
+module:
+
+```mojo
+from professor.report.table import ColorMode
+
+var tables = Prof.report().tables()
+tables[0].style.color = ColorMode.NEVER
+print(tables[0])
+```
 
 ### Custom metrics: `Instrument` and `Metric`
 
@@ -269,8 +279,7 @@ reading works. A metric source implements the `Instrument` trait, and its
 readings implement `Metric`:
 
 ```mojo
-from professor.measure import Instrument, Metric
-from professor.profile import Profiler
+from professor import Profiler, Instrument, Metric
 
 
 struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
@@ -301,7 +310,7 @@ multi-valued one overrides `fields()` to name its components, which is what
 lets the report stack them:
 
 ```mojo
-from professor.measure import MetricField
+from professor import MetricField
 
 
 struct Counters(Copyable, Defaultable, ImplicitlyDeletable, Metric):
@@ -512,7 +521,7 @@ passing an unchecked string to the C API. To inspect what the current machine
 exposes:
 
 ```sh
-sudo pixi run mojo run -I src examples/apple/ffi/kperf_data.mojo
+sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
 ```
 
 ### Count modes
@@ -617,10 +626,10 @@ effective per-thread set is `global_counting & thread_counting`.
 `Configuration.counter_map` translates them back to the event order you
 requested.
 
-### FFI layer
+### System bindings
 
-The direct bindings live under
-[`src/professor/os/apple/ffi/`](src/professor/os/apple/ffi/):
+The direct system bindings live under
+[`src/professor/os/apple/sys/`](src/professor/os/apple/sys/):
 
 - `kperf.mojo` binds KPC and kperf functions.
 - `kperf_data.mojo` binds kpep database and configuration functions.
@@ -630,12 +639,12 @@ instead of linking against private SDK symbols. The bindings are based on
 reverse-engineered interfaces, so struct layouts and function behavior must be
 treated as unstable.
 
-Use the FFI examples only when debugging the wrapper or exploring Apple's raw
-interfaces:
+Use the system-binding examples only when debugging the wrapper or exploring
+Apple's raw interfaces:
 
 ```sh
-sudo pixi run mojo run -I src examples/apple/ffi/measure.mojo
-sudo pixi run mojo run -I src examples/apple/ffi/kperf_data.mojo
+sudo pixi run mojo run -I src examples/apple/sys/measure.mojo
+sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
 ```
 
 For normal measurement code, prefer `Sampler` and `ThreadSampler`.

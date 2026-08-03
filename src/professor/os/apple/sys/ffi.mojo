@@ -1,9 +1,10 @@
-from std.ffi import c_char
 from std.ffi import CStringSlice, c_char
+
 
 # ===------------------------------------------------------------------------===
 # Type aliases
 # ===------------------------------------------------------------------------===
+
 
 comptime ConstCStringPointer = OptionalUnsafePointer[
     c_char, ImmutUntrackedOrigin
@@ -12,6 +13,7 @@ comptime ConstCStringPointer = OptionalUnsafePointer[
 
 comptime c_void = Optional[OpaquePointer[MutUntrackedOrigin]]
 """Nullable C `void*` with externally managed lifetime."""
+
 
 # ===------------------------------------------------------------------------===
 # C string utilities
@@ -55,12 +57,7 @@ def cstr_to_string[
         return String("<NON-UTF8>")
 
 
-# ===------------------------------------------------------------------------===
-# Pointer utilities
-# ===------------------------------------------------------------------------===
-
-
-def cast_optional_mut_ptr[
+def _cast_optional_mut_ptr[
     T: AnyType,
     from_origin: MutOrigin,
     //,

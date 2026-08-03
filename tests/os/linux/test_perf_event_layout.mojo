@@ -26,7 +26,7 @@ from professor.os.linux.sys import (
     perf_hardware_cache_config,
     perf_hardware_event_config,
 )
-from professor.os.linux.counts import Count
+from professor.os.linux import Count
 
 
 def test_perf_event_attr_size_and_alignment_sensitive_offsets() raises:

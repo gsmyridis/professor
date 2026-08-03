@@ -3,8 +3,7 @@ from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
 from std.memory import OptionalUnsafePointer, OpaquePointer
 from std.sys import size_of
 from .kperf import KPCConfig
-from professor.ffi_utils import cast_optional_mut_ptr
-from professor.ffi_utils import ConstCStringPointer, c_void
+from .ffi import ConstCStringPointer, _cast_optional_mut_ptr, c_void
 
 # ===-----------------------------------------------------------------------===#
 # KPEP architecture constants
@@ -385,7 +384,7 @@ def kpep_config_add_event[
         cfg,
         ev_ptr.unsafe_origin_cast[MutUntrackedOrigin](),
         flag,
-        cast_optional_mut_ptr[MutUntrackedOrigin](err),
+        _cast_optional_mut_ptr[MutUntrackedOrigin](err),
     )
 
 

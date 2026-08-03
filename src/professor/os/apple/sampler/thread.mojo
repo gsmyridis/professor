@@ -1,12 +1,12 @@
 from professor.os.apple.config import Configuration
-from professor.os.apple.kperf import (
+from professor.os.apple._kperf import (
     get_counting,
     get_thread_counters,
     set_config,
     set_counting,
     set_thread_counting,
 )
-from professor.os.apple.ffi import kperf as ffi_kperf
+from professor.os.apple.sys import kperf as sys_kperf
 
 
 struct ThreadSampler(Movable):
@@ -44,7 +44,7 @@ struct ThreadSampler(Movable):
 
     def __del__(deinit self):
         if self._running:
-            _ = ffi_kperf.kpc_set_thread_counting(0)
+            _ = sys_kperf.kpc_set_thread_counting(0)
 
     def is_running(self) -> Bool:
         return self._running
