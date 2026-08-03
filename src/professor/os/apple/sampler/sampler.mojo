@@ -8,7 +8,7 @@ from professor.os.apple._kperf import (
     force_all_ctrs_get,
     force_all_ctrs_set,
 )
-from professor.os.apple.sys import kperf as ffi_kperf
+from professor.os.apple.sys import kperf as sys_kperf
 from professor.os.apple.sampler.thread import ThreadSampler
 
 
@@ -29,7 +29,7 @@ struct Sampler(Movable):
         if not self._released:
             # Global counting is shared kernel state. Clearing it here would
             # stop other samplers/threads that did not create this lease.
-            _ = ffi_kperf.kpc_force_all_ctrs_set(self._saved_force_all)
+            _ = sys_kperf.kpc_force_all_ctrs_set(self._saved_force_all)
 
     def release(mut self) raises:
         if self._released:
