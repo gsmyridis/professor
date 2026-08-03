@@ -5,7 +5,7 @@
 # Apple
 **/.DS_Store
 
-# Agents' configurations
+# Agent configs
 .claude/
 .codex/
 
@@ -14,3 +14,6 @@
 
 # Examples
 **/data
+
+# Sources
+/sources

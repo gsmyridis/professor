@@ -1,7 +1,7 @@
 from professor.os.apple.cpu import Cpu
+from professor.os.event import Event
 
 from .cpu import CpuEvent
-from .event import Event
 
 
 @fieldwise_init

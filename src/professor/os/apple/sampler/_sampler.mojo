@@ -25,13 +25,6 @@ struct Sampler(Movable):
         self._released = False
         force_all_ctrs_set(1)
 
-        # // Verify that the framework's kpep_event stride matches our struct
-        # // definition. Apple has changed this struct size across macOS versions;
-        # // a mismatch means our repr(C) definition is stale and direct field
-        # // access would read corrupt data.
-        # if cfg!(any(debug_assertions, feature = "runtime-assertions")) {
-        #     verify_event_stride(kpep_vt, db.as_ptr())?;
-
     def __del__(deinit self):
         if not self._released:
             # Global counting is shared kernel state. Clearing it here would

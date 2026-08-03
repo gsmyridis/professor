@@ -340,7 +340,7 @@ performance-counter machinery:
 
 - **Apple Silicon / macOS**: the private `kperf` and `kperfdata` frameworks —
   implemented today, documented below.
-- **Linux**: `perf_event_open` — planned.
+- **Linux**: owned `perf_event_open` counters and groups — implemented.
 - **Windows**: will follow when Mojo supports the platform.
 
 Each tool has tradeoffs.
@@ -350,6 +350,49 @@ Some APIs are powerful but platform specific.
 Professor wraps them in safer Mojo APIs -- owned handles, typed events,
 automatic event-to-counter mapping -- so you can use them directly or
 plug them into profile zones as custom measurers.
+
+## Linux perf-event Backend
+
+Linux counters can be measured independently or as an atomically controlled
+group. Standalone counters are always opened from a `CounterConfig`:
+
+```mojo
+from professor.os.linux import Counter, CounterConfig, PerfEvent
+
+var counter = Counter(CounterConfig(PerfEvent.CpuCycles))
+```
+
+Groups reuse the same configuration type for each member, while the builder
+owns the process, CPU, and descriptor settings shared by the kernel group:
+
+```mojo
+from professor.os.linux import (
+    CounterConfig,
+    CountMode,
+    GroupBuilder,
+    PerfEvent,
+)
+
+var builder = GroupBuilder()
+var cycles = builder.add(CounterConfig(PerfEvent.CpuCycles))
+var instructions = builder.add(
+    CounterConfig(
+        PerfEvent.Instructions,
+        mode=CountMode.Userspace | CountMode.Kernel,
+    )
+)
+var group = builder^.build()
+
+group.enable()
+# measured work
+group.disable()
+
+var counts = group.read()
+print(counts[cycles], counts[instructions])
+```
+
+`Group` owns every event descriptor. The opaque tokens returned by `add()`
+identify results without exposing individual grouped-counter control.
 
 ## Apple kperf Backend
 
@@ -641,7 +684,9 @@ Backends:
 
 - Apple Silicon/macOS: `kperf`, KPC, and KPEP access to hardware performance
   counters. Implemented.
-- Linux: `perf_event_open` and perf events. Not implemented.
+- Linux: owned `perf_event_open` counters, heterogeneous groups, atomic reads,
+  and multiplexing correction are implemented. See
+  [`docs/linux-perf-event-status.md`](docs/linux-perf-event-status.md).
 - x86_64: `rdtsc`/`rdtscp` timing support. Not implemented.
 - AArch64: user-readable `*_EL0` counter registers where the OS enables them.
   Not implemented.

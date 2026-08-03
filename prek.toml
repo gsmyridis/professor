@@ -1,0 +1,32 @@
+minimum_prek_version = "0.4.11"
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "mixed-line-ending" },
+  { id = "check-added-large-files" },
+  { id = "check-case-conflict" },
+  { id = "check-merge-conflict" },
+  { id = "check-toml" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "format",
+    name = "Format Mojo sources",
+    entry = "pixi run format",
+    language = "system",
+    pass_filenames = false,
+  },
+  {
+    id = "test",
+    name = "Run tests",
+    entry = "pixi run test",
+    language = "system",
+    pass_filenames = false,
+  },
+]
