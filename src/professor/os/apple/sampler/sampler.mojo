@@ -3,13 +3,13 @@ from std.ffi import c_int
 from professor.os.apple.config import ConfigBuilder
 from professor.os.apple.cpu import Cpu
 from professor.os.apple.database import Database
-from professor.os.apple.event import Event
-from professor.os.apple.kperf import (
+from professor.os.event import Event
+from professor.os.apple._kperf import (
     force_all_ctrs_get,
     force_all_ctrs_set,
 )
-from professor.os.apple.ffi import kperf as ffi_kperf
-from professor.os.apple.sampler._thread import ThreadSampler
+from professor.os.apple.sys import kperf as ffi_kperf
+from professor.os.apple.sampler.thread import ThreadSampler
 
 
 struct Sampler(Movable):

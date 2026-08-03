@@ -14,7 +14,7 @@ from std.benchmark import black_box, keep
 
 from main import Pmu
 from professor import RepetitionTester
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 from professor.os.apple import Sampler
 
 

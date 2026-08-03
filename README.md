@@ -36,7 +36,7 @@ cache misses, branch behavior, retired instructions, and more.
 
 ```mojo
 from professor import GlobalProfiler
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 
 comptime Prof = GlobalProfiler[WallClock]
 
@@ -92,7 +92,7 @@ component:
 
 ```mojo
 from professor import RepetitionTester
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 
 
 def read_file() raises:
@@ -126,7 +126,7 @@ registry. Separate values are independent, even when they have the same type:
 
 ```mojo
 from professor.profile import Profiler
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 
 var parsing_profiler = Profiler[WallClock]()
 var compute_profiler = Profiler[WallClock, Capacity=16]()
@@ -148,7 +148,7 @@ import them wherever you instrument:
 ```mojo
 # profile.mojo
 from professor.profile import GlobalProfiler
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 
 comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
 ```
@@ -261,6 +261,20 @@ own axis. Percentages are computed per component, each against the
 corresponding component of the program total.
 
 A metric with one component yields exactly one table, titled `Program total:`.
+
+### Table customization
+
+`Report.tables()` returns copies of the rendered tables for inspection or
+custom rendering. Table types live in the explicit `professor.report.table`
+module:
+
+```mojo
+from professor.report.table import ColorMode
+
+var tables = Prof.report().tables()
+tables[0].style.color = ColorMode.NEVER
+print(tables[0])
+```
 
 ### Custom metrics: `Instrument` and `Metric`
 
@@ -512,7 +526,7 @@ passing an unchecked string to the C API. To inspect what the current machine
 exposes:
 
 ```sh
-sudo pixi run mojo run -I src examples/apple/ffi/kperf_data.mojo
+sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
 ```
 
 ### Count modes
@@ -617,10 +631,10 @@ effective per-thread set is `global_counting & thread_counting`.
 `Configuration.counter_map` translates them back to the event order you
 requested.
 
-### FFI layer
+### System bindings
 
-The direct bindings live under
-[`src/professor/os/apple/ffi/`](src/professor/os/apple/ffi/):
+The direct system bindings live under
+[`src/professor/os/apple/sys/`](src/professor/os/apple/sys/):
 
 - `kperf.mojo` binds KPC and kperf functions.
 - `kperf_data.mojo` binds kpep database and configuration functions.
@@ -630,12 +644,12 @@ instead of linking against private SDK symbols. The bindings are based on
 reverse-engineered interfaces, so struct layouts and function behavior must be
 treated as unstable.
 
-Use the FFI examples only when debugging the wrapper or exploring Apple's raw
-interfaces:
+Use the system-binding examples only when debugging the wrapper or exploring
+Apple's raw interfaces:
 
 ```sh
-sudo pixi run mojo run -I src examples/apple/ffi/measure.mojo
-sudo pixi run mojo run -I src examples/apple/ffi/kperf_data.mojo
+sudo pixi run mojo run -I src examples/apple/sys/measure.mojo
+sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
 ```
 
 For normal measurement code, prefer `Sampler` and `ThreadSampler`.

@@ -3,7 +3,6 @@ from .config import ConfigBuilder, Configuration, CountMode
 from .cpu import Cpu, Architecture
 from .database import Database
 from .event import (
-    Event,
     AppleEvent,
     CpuEvent,
     DatabaseEvent,

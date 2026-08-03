@@ -5,7 +5,7 @@ from .sys import (
     PERF_FLAG_PID_CGROUP,
     Attributes,
 )
-from ._event import PerfEvent
+from .event import PerfEvent
 
 
 comptime Config = Attributes

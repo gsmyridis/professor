@@ -1,5 +1,5 @@
-from .ffi import kperf as ffi_kperf
-from .ffi.kperf import KPCConfig
+from .sys import kperf as ffi_kperf
+from .sys.kperf import KPCConfig
 from std.ffi import c_char, c_int, c_size_t
 
 

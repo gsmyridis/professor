@@ -1,4 +1,4 @@
-from .ffi.kperf import (
+from .sys.kperf import (
     KPC_PMU_ERROR,
     KPC_PMU_INTEL_V3,
     KPC_PMU_ARM_APPLE,

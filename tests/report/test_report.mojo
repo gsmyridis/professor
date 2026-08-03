@@ -8,7 +8,7 @@ from professor import (
     GlobalProfiler,
     Report,
 )
-from professor.report import Align, ColorMode
+from professor.report.table import Align, ColorMode
 
 
 # A two-component metric: each `measure()` advances both counters by a fixed

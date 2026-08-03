@@ -32,6 +32,8 @@ test-report = """
 
 test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
 
+test-docs = "mojo doc -I src src/professor -o /tmp/professor-doc.json"
+
 test-perf = """
     mojo run -I src tests/os/linux/test_config.mojo \
     && mojo run -I src tests/os/linux/test_counts.mojo \
@@ -42,7 +44,7 @@ test-kperf = """
     && mojo run -I src tests/os/apple/test_database.mojo \
     && mojo run -I src tests/os/apple/test_config.mojo \
     && mojo run -I src tests/os/apple/test_event.mojo \
-    && mojo run -I src tests/os/apple/ffi/test_kperf_data_layout.mojo
+    && mojo run -I src tests/os/apple/sys/test_kperf_data_layout.mojo
 """
 test-backend = """
     {% if pixi.is_linux %}
@@ -67,6 +69,7 @@ test-arch = """
 """
 
 test = { depends-on = [
+  "test-docs",
   "test-profile",
   "test-report",
   "test-reptest",

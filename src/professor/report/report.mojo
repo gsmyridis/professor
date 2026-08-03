@@ -1,8 +1,8 @@
 from professor.measure import Metric
 
 from ._layout import zone_tables
-from ._stat import ZoneStat
-from ._table import Table
+from .stat import ZoneStat
+from .table import Table
 
 
 struct Report[S: Metric](Writable):

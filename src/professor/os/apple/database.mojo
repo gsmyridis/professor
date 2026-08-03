@@ -1,7 +1,7 @@
 from std.ffi import c_size_t, c_char, CStringSlice
 from std.sys import size_of
 
-from .ffi.kperf_data import (
+from .sys.kperf_data import (
     KPEPDb,
     KPEPEvent,
     kpep_db_create,
@@ -17,7 +17,7 @@ from .cpu import Cpu, Architecture
 from .event import DatabaseEvent
 from .classes import Classes
 
-from professor.ffi_utils import (
+from professor.os.apple.sys.ffi import (
     ConstCStringPointer,
     cstr_to_slice,
     cstr_to_string,

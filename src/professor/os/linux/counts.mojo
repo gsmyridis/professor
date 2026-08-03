@@ -1,4 +1,4 @@
-from ._token import CounterToken
+from .token import CounterToken
 
 
 struct Count(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):

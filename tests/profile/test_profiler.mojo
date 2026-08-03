@@ -1,7 +1,7 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 from professor import GlobalProfiler, Instrument, Metric, Nanos, Profiler
-from professor.report import ColorMode
+from professor.report.table import ColorMode
 
 
 # A deterministic measurer: each `measure()` returns a monotonically

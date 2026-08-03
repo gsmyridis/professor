@@ -8,7 +8,7 @@ the implementation follows the Rust `Token` -> `Tokenizer` -> `Value` ->
 
 from std.memory import OwnedPointer
 
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 from professor.profile import GlobalProfiler
 
 

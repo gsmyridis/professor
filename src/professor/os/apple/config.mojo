@@ -1,7 +1,7 @@
 from std.ffi import c_size_t
 from std.sys import size_of
 
-from .ffi.kperf_data import (
+from .sys.kperf_data import (
     KPEPConfig,
     KPEPEvent,
     KPCConfig,
@@ -21,7 +21,7 @@ from .ffi.kperf_data import (
 from .database import Database
 from .event import DatabaseEvent
 from .classes import Classes
-from .kperf import get_counter_count
+from ._kperf import get_counter_count
 
 # ===-----------------------------------------------------------------------===
 # KPC Configuration

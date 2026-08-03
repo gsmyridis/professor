@@ -1,4 +1,4 @@
-from .ffi.kperf import (
+from .sys.kperf import (
     KPC_CLASS_FIXED_MASK,
     KPC_CLASS_CONFIGURABLE_MASK,
     KPC_CLASS_POWER_MASK,

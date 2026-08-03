@@ -1,7 +1,7 @@
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
-from professor.os.linux._event import PerfEvent
-from professor.os.linux.config import (
+from professor.os.linux.event import PerfEvent
+from professor.os.linux import (
     CounterConfig,
     CountMode,
     Flag,

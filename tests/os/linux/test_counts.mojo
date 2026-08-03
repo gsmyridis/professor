@@ -1,7 +1,7 @@
 from std.testing import TestSuite, assert_equal, assert_raises
 
-from professor.os.linux._token import CounterToken
-from professor.os.linux.counts import Counts
+from professor.os.linux.token import CounterToken
+from professor.os.linux import Counts
 
 
 def test_counts_are_addressable_by_token() raises:

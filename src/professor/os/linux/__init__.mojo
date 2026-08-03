@@ -1,6 +1,6 @@
-from ._event import PerfEvent
+from .event import PerfEvent
 from .counter import Counter
-from ._token import CounterToken
+from .token import CounterToken
 from .counts import Count, Counts
 from .config import (
     Config,

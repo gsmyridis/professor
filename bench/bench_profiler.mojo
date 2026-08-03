@@ -3,7 +3,7 @@ from std.time import perf_counter_ns
 from std.benchmark import black_box
 
 from professor.measure import Instrument, Metric
-from professor.measure.default import WallClock
+from professor.measure import WallClock
 from professor.profile import Profiler
 
 

@@ -2,7 +2,7 @@ from std.sys import stdout
 from std.time import perf_counter_ns
 
 from .measure import Instrument, Metric, MetricField
-from .report import Align, Cell, Column, Table, TableStyle
+from .report.table import Align, Cell, Column, Table, TableStyle
 
 
 struct RepetitionResults[M: Metric](Copyable):
