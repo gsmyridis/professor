@@ -21,6 +21,12 @@ struct Report[S: Metric](Writable):
     written.
     """
 
+    def __init__(out self):
+        """Creates an empty, unrendered report."""
+        self.total = Self.S()
+        self.zones = List[ZoneStat[Self.S]]()
+        self._tables = List[Table]()
+
     def __init__(
         out self, var total: Self.S, var zones: List[ZoneStat[Self.S]]
     ) raises:

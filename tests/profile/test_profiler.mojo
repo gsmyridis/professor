@@ -77,6 +77,11 @@ struct ConfigurableTicker(Instrument):
         return Nanos(self.now)
 
 
+def test_profiling_is_enabled() raises:
+    comptime assert Profiler[Ticker].is_enabled()
+    comptime assert GlobalProfiler[Ticker, Tag="test.enabled"].is_enabled()
+
+
 def test_runtime_profiler_owns_configured_instrument() raises:
     var prof = Profiler[ConfigurableTicker](ConfigurableTicker(5))
 
