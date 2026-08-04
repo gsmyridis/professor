@@ -2,7 +2,7 @@ from std.os import abort
 from std.sys.intrinsics import unlikely
 
 from professor.measure import Instrument
-from ._consts import _profiling_is_enabled
+from ._consts import is_profiling_enabled
 from ._state import _CoreProfilerState
 
 
@@ -83,19 +83,19 @@ struct _ProfileZone[I: Instrument, C: Int, origin: MutOrigin] where C > 0:
     comptime _DisabledType = _DisabledProfileZone
 
     comptime _StorageType: Movable = (
-        Self._EnabledType if _profiling_is_enabled() else Self._DisabledType
+        Self._EnabledType if is_profiling_enabled() else Self._DisabledType
     )
 
     var _storage: Self._StorageType
 
     @always_inline
     def __init__(out self):
-        comptime assert not _profiling_is_enabled()
+        comptime assert not is_profiling_enabled()
         self._storage = rebind_var[Self._StorageType](_DisabledProfileZone())
 
     @always_inline
     def __init__(out self, var enabled: Self._EnabledType):
-        comptime assert _profiling_is_enabled()
+        comptime assert is_profiling_enabled()
         self._storage = rebind_var[Self._StorageType](enabled^)
 
     @always_inline
@@ -115,7 +115,7 @@ struct _ProfileZone[I: Instrument, C: Int, origin: MutOrigin] where C > 0:
 
     @always_inline
     def close(deinit self):
-        comptime if _profiling_is_enabled():
+        comptime if is_profiling_enabled():
             var enabled = rebind_var[Self._EnabledType](self._storage^)
             enabled^.close()
         else:

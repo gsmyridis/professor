@@ -1,7 +1,7 @@
 from std.sys import is_defined
 
 
-def _profiling_is_enabled() -> Bool:
+def is_profiling_enabled() -> Bool:
     return is_defined["PROFESSOR_PROFILE"]()
 
 

@@ -77,7 +77,7 @@ struct ConfigurableTicker(Instrument):
         return Nanos(self.now)
 
 
-def test_profiling_is_enabled() raises:
+def testis_profiling_enabled() raises:
     comptime assert Profiler[Ticker].is_enabled()
     comptime assert GlobalProfiler[Ticker, Tag="test.enabled"].is_enabled()
 
