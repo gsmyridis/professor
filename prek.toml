@@ -17,14 +17,14 @@ repo = "local"
 hooks = [
   {
     id = "format",
-    name = "Format Mojo sources",
+    name = "format Mojo sources",
     entry = "pixi run format",
     language = "system",
     pass_filenames = false,
   },
   {
     id = "test",
-    name = "Run tests",
+    name = "run tests",
     entry = "pixi run test",
     language = "system",
     pass_filenames = false,

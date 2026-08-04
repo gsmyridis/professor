@@ -23,16 +23,17 @@ examples = ["examples"]
 [tasks]
 format = "pixi run mojo format ."
 
-test-profile = "mojo run -I src tests/profile/test_profiler.mojo"
+test-docs = "mojo doc -I src src/professor -o /tmp/professor-doc.json"
+
+test-profile = "mojo run -D PROFESSOR_PROFILE -I src tests/profile/test_profiler.mojo"
+test-profile-disabled = "mojo run -I src tests/profile/test_disabled.mojo"
 
 test-report = """
     mojo run -I src tests/report/test_table.mojo \
-    && mojo run -I src tests/report/test_report.mojo
+    && mojo run -D PROFESSOR_PROFILE -I src tests/report/test_report.mojo
 """
 
 test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
-
-test-docs = "mojo doc -I src src/professor -o /tmp/professor-doc.json"
 
 test-perf = """
     mojo run -I src tests/os/linux/test_config.mojo \
@@ -71,6 +72,7 @@ test-arch = """
 test = { depends-on = [
   "test-docs",
   "test-profile",
+  "test-profile-disabled",
   "test-report",
   "test-reptest",
   "test-backend",
@@ -96,12 +98,12 @@ python = ">=3.13,<3.15"
 haversine-calculate = "python examples/haversine/gendata.py calculate"
 haversine-generate = "python examples/haversine/gendata.py generate 100000 --output examples/haversine/data/pairs.json"
 haversine-profile = """
-    mojo run -I src -I examples/haversine/parser examples/haversine/main.mojo examples/haversine/data/pairs.json
+    mojo run -D PROFESSOR_PROFILE -I src -I examples/haversine/parser examples/haversine/main.mojo examples/haversine/data/pairs.json
 """
 haversine-test-parser = """
     mojo run -I src -I examples/haversine/parser examples/haversine/test_parser.mojo
 """
 
 # Hardware counters need elevated privileges: sudo pixi run example-counters
-example-counters = "mojo run -I src examples/counters/main.mojo"
+example-counters = "mojo run -D PROFESSOR_PROFILE -I src examples/counters/main.mojo"
 example-counters-repetition = "mojo run -I src -I examples/counters examples/counters/repetition.mojo"

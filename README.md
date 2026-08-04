@@ -59,7 +59,37 @@ def main() raises:
 Run it from a clone of this repository:
 
 ```sh
+pixi run mojo run -D PROFESSOR_PROFILE -I src my_program.mojo
+```
+
+The define must appear before the source path. Arguments after
+`my_program.mojo` are passed to the program rather than the compiler.
+
+### Compile-time switch
+
+Profiling is opt-in. `-D PROFESSOR_PROFILE` enables profiler state, sampling,
+site registration, and lifecycle checks for the whole program. Without the
+define, `Profiler` has zero-sized storage and `start()`, `end()`, `reset()`,
+and both forms of `zone()` compile to no-ops. `GlobalProfiler` does not create
+its global state. `report()` returns an empty, unrendered report.
+
+The same instrumented source can therefore be used for profiling and normal
+builds:
+
+```sh
+# Profiling enabled
+pixi run mojo run -D PROFESSOR_PROFILE -I src my_program.mojo
+
+# Profiling compiled out
 pixi run mojo run -I src my_program.mojo
+```
+
+`Profiler.is_enabled()` and `GlobalProfiler.is_enabled()` expose the build mode
+for code that should only run when a report is available:
+
+```mojo
+comptime if Prof.is_enabled():
+    print(Prof.report())
 ```
 
 A zone is opened with a semantic label and closed explicitly. The zone handle

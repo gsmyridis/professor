@@ -7,7 +7,7 @@ from std.sys.intrinsics import unlikely
 from professor.measure import Instrument
 from professor.report import Report, ZoneStat
 
-from ._consts import UNCLAIMED_ANCHOR_LABEL
+from ._consts import is_profiling_enabled, UNCLAIMED_ANCHOR_LABEL
 from ._registry import _SiteKey, _hash_comp_time, _site_hash
 from ._state import (
     ROOT_ANCHOR_INDEX,
@@ -15,12 +15,17 @@ from ._state import (
     _CoreProfilerState,
     CAPACITY_DEFAULT,
 )
-from ._zone import _ProfileZone
+from ._zone import _EnabledProfileZone, _ProfileZone
 
 
 # ===------------------------------------------------------------------------===
 # Runtime profiler
 # ===------------------------------------------------------------------------===
+
+
+@fieldwise_init
+struct _DisabledProfilerStorage(RegisterPassable):
+    pass
 
 
 struct Profiler[
@@ -36,30 +41,60 @@ struct Profiler[
     # Comptime aliases
     # ===--------------------------------------------------------------------===
 
+    comptime MetricType = Self.I.MetricType
+
     comptime _ProfilerStateType = _ProfilerState[Self.I, Self.Capacity]
 
     comptime _CoreProfilerStateType = _CoreProfilerState[Self.I, Self.Capacity]
 
-    comptime MetricType = Self.I.MetricType
+    comptime _EnabledStorageType = OwnedPointer[Self._ProfilerStateType]
+
+    comptime _StorageType: RegisterPassable = (
+        Self._EnabledStorageType if is_profiling_enabled() else _DisabledProfilerStorage
+    )
 
     # ===--------------------------------------------------------------------===
     # Fields
     # ===--------------------------------------------------------------------===
 
-    var _storage: OwnedPointer[Self._ProfilerStateType]
-    """The profiler state. It is stored on the heap so that the profiler is
-    small and cheap to move.
+    var _storage: Self._StorageType
+    """The heap-owned profiler state when profiling is enabled; otherwise,
+    zero-sized disabled storage.
     """
+
+    # ===--------------------------------------------------------------------===
+    # Configuration methods
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    def is_enabled() -> Bool:
+        """Returns whether profiling is enabled in this build."""
+        return is_profiling_enabled()
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self):
-        self._storage = OwnedPointer(Self._ProfilerStateType())
+        comptime if is_profiling_enabled():
+            self._storage = rebind_var[Self._StorageType](
+                Self._EnabledStorageType(Self._ProfilerStateType())
+            )
+        else:
+            self._storage = rebind_var[Self._StorageType](
+                _DisabledProfilerStorage()
+            )
 
     def __init__(out self, var instrument: Self.I):
-        self._storage = OwnedPointer(Self._ProfilerStateType(instrument^))
+        comptime if is_profiling_enabled():
+            self._storage = rebind_var[Self._StorageType](
+                Self._EnabledStorageType(Self._ProfilerStateType(instrument^))
+            )
+        else:
+            _ = instrument^
+            self._storage = rebind_var[Self._StorageType](
+                _DisabledProfilerStorage()
+            )
 
     # ===--------------------------------------------------------------------===
     # Profiler state access methods
@@ -69,7 +104,11 @@ struct Profiler[
     def _state[
         mut: Bool, origin: Origin[mut=mut], //
     ](ref[origin] self) -> UnsafePointer[Self._ProfilerStateType, origin]:
-        return self._storage.unsafe_ptr().unsafe_origin_cast[origin]()
+        return (
+            rebind[Self._EnabledStorageType](self._storage)
+            .unsafe_ptr()
+            .unsafe_origin_cast[origin]()
+        )
 
     @always_inline
     def _core_state[
@@ -85,6 +124,9 @@ struct Profiler[
 
     def start(mut self) raises:
         """Starts this profiler's measurement interval."""
+        comptime if not is_profiling_enabled():
+            return
+
         var st = self._core_state()
         if st[].has_started:
             raise Error("start() called more than once")
@@ -97,6 +139,9 @@ struct Profiler[
 
     def end(mut self) raises:
         """Ends this profiler's measurement interval."""
+        comptime if not is_profiling_enabled():
+            return
+
         var st = self._core_state()
 
         # Measure as early as possible.
@@ -119,6 +164,9 @@ struct Profiler[
 
     def reset(mut self) raises:
         """Clears measurements while preserving the instrument and sites."""
+        comptime if not is_profiling_enabled():
+            return
+
         var st = self._core_state()
         if st[].current_open_depth != 0:
             raise Error(
@@ -150,16 +198,22 @@ struct Profiler[
         index >= ROOT_ANCHOR_INDEX and index < Self.Capacity
     ):
         """Opens a zone targeting an explicitly selected anchor."""
-        var loc = call_location()
-        return self._zone_at[name, index](loc)
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return self._zone_at[name, index](loc)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, origin]()
 
     @always_inline
     def zone[
         origin: MutOrigin, //, name: StaticString
     ](ref[origin] self) -> _ProfileZone[Self.I, Self.Capacity, origin]:
         """Opens a zone resolved from its label and source location."""
-        var loc = call_location()
-        return self._zone_at[name](loc)
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return self._zone_at[name](loc)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, origin]()
 
     @always_inline
     def _zone_at[
@@ -193,6 +247,9 @@ struct Profiler[
 
     def report(self) raises -> Report[Self.I.MetricType]:
         """Derives per-site statistics from the completed session."""
+        comptime if not is_profiling_enabled():
+            return Report[Self.I.MetricType]()
+
         var st = self._core_state()
         var open_count = st[].current_open_depth
         if open_count != 0:
@@ -246,6 +303,15 @@ struct GlobalProfiler[
     comptime _global_profiler = _Global[Self.Tag, Self._init]
 
     # ===--------------------------------------------------------------------===
+    # Configuration methods
+    # ===--------------------------------------------------------------------===
+
+    @staticmethod
+    def is_enabled() -> Bool:
+        """Returns whether profiling is enabled in this build."""
+        return Self.ProfilerType.is_enabled()
+
+    # ===--------------------------------------------------------------------===
     # Lifecycle methods
     # ===--------------------------------------------------------------------===
 
@@ -271,19 +337,25 @@ struct GlobalProfiler[
 
     @staticmethod
     def start() raises:
-        Self._profiler()[].start()
+        comptime if is_profiling_enabled():
+            Self._profiler()[].start()
 
     @staticmethod
     def end() raises:
-        Self._profiler()[].end()
+        comptime if is_profiling_enabled():
+            Self._profiler()[].end()
 
     @staticmethod
     def reset() raises:
-        Self._profiler()[].reset()
+        comptime if is_profiling_enabled():
+            Self._profiler()[].reset()
 
     @staticmethod
     def report() raises -> Report[Self.MetricType]:
-        return Self._profiler()[].report()
+        comptime if is_profiling_enabled():
+            return Self._profiler()[].report()
+        else:
+            return Report[Self.MetricType]()
 
     @always_inline
     @staticmethod
@@ -292,16 +364,22 @@ struct GlobalProfiler[
     ]() -> _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin] where (
         index >= ROOT_ANCHOR_INDEX and index < Self.Capacity
     ):
-        var loc = call_location()
-        return Self._profiler()[]._zone_at[name, index](loc)
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return Self._profiler()[]._zone_at[name, index](loc)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]()
 
     @always_inline
     @staticmethod
     def zone[
         name: StaticString
     ]() -> _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]:
-        var loc = call_location()
-        return Self._profiler()[]._zone_at[name](loc)
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return Self._profiler()[]._zone_at[name](loc)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]()
 
 
 @always_inline
@@ -357,11 +435,13 @@ def _open_zone[
     var sample = st[].instrument.measure()
 
     return _ProfileZone[I, C, origin](
-        label,
-        idx,
-        parent,
-        depth,
-        prev_inclusive^,
-        sample^,
-        st,
+        _EnabledProfileZone[I, C, origin](
+            label,
+            idx,
+            parent,
+            depth,
+            prev_inclusive^,
+            sample^,
+            st,
+        )
     )
