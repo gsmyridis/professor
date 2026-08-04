@@ -96,7 +96,7 @@ def test_any_component_improvement_resets_patience() raises:
         patience=2,
     )
 
-    var results = tester.run[do_nothing]()
+    var results = tester.run(do_nothing)
     assert_equal(results.test_count, 4)
     assert_equal(results.minimum.cycles, 5)
     assert_equal(results.minimum.instructions, 4)
@@ -106,22 +106,22 @@ def test_any_component_improvement_resets_patience() raises:
     assert_equal(results.average().instructions, 4)
 
 
-def test_max_repetitions_places_a_hard_limit() raises:
+def test_max_reps_places_a_hard_limit() raises:
     var tester = RepetitionTester(
         RepetitionInstrument(),
         patience=10,
-        max_repetitions=2,
+        max_reps=2,
     )
 
-    var results = tester.run[do_nothing]()
+    var results = tester.run(do_nothing)
     assert_equal(results.test_count, 2)
 
 
-def test_invalid_max_repetitions_raises() raises:
+def test_invalid_max_reps_raises() raises:
     with assert_raises(contains="greater than zero"):
         _ = RepetitionTester(
             RepetitionInstrument(),
-            max_repetitions=0,
+            max_reps=0,
         )
 
 
@@ -133,25 +133,72 @@ def test_invalid_patience_raises() raises:
         )
 
 
+def test_invalid_batch_reps_raises() raises:
+    with assert_raises(contains="greater than zero"):
+        _ = RepetitionTester(
+            RepetitionInstrument(),
+            batch_reps=0,
+        )
+
+
+def test_batch_reps_count_function_calls_and_respect_limit() raises:
+    var calls = 0
+
+    def count_call() raises {mut calls}:
+        calls += 1
+
+    var tester = RepetitionTester(
+        RepetitionInstrument(),
+        patience=10,
+        batch_reps=2,
+        max_reps=3,
+    )
+
+    var results = tester.run(count_call)
+    assert_equal(calls, 3)
+    assert_equal(results.test_count, 3)
+    assert_equal(results.minimum.cycles, 2)
+    assert_equal(results.maximum.cycles, 5)
+    assert_equal(results.average().cycles, 3)
+
+
+def test_batch_reps_respect_patience() raises:
+    var calls = 0
+
+    def count_call() raises {mut calls}:
+        calls += 1
+
+    var tester = RepetitionTester(
+        RepetitionInstrument(),
+        patience=3,
+        batch_reps=2,
+        max_reps=None,
+    )
+
+    var results = tester.run(count_call)
+    assert_equal(calls, 5)
+    assert_equal(results.test_count, 5)
+
+
 def test_function_error_does_not_poison_tester() raises:
     var tester = RepetitionTester(RepetitionInstrument())
 
     with assert_raises(contains="test failure"):
-        _ = tester.run[fail]()
+        _ = tester.run(fail)
 
     # The instrument remains usable after the function propagates an error.
     with assert_raises(contains="test failure"):
-        _ = tester.run[fail]()
+        _ = tester.run(fail)
 
 
 def test_table_renders_each_metric_component() raises:
     var tester = RepetitionTester(
         RepetitionInstrument(),
         patience=1,
-        max_repetitions=2,
+        max_reps=2,
     )
 
-    var results = tester.run[do_nothing]()
+    var results = tester.run(do_nothing)
     var table = _repetition_table(results)
     assert_equal(table.num_columns(), 3)
     assert_equal(table.column(0).header, "Statistic")

@@ -4,6 +4,10 @@ from std.time import perf_counter_ns
 from .measure import Instrument, Metric, MetricField
 from .report.table import Align, Cell, Column, Table, TableStyle
 
+# ===------------------------------------------------------------------------===
+# Repetition Test Results
+# ===------------------------------------------------------------------------===
+
 
 struct RepetitionResults[M: Metric](Copyable):
     """Statistics accumulated across completed repetitions."""
@@ -19,13 +23,24 @@ struct RepetitionResults[M: Metric](Copyable):
         self.minimum = sample.copy()
         self.maximum = sample.copy()
 
+    @staticmethod
+    def _from_batch(var total: Self.M, repetitions: Int) -> Self:
+        var sample = total / repetitions
+        var results = Self(sample)
+        results.test_count = repetitions
+        results.total = total^
+        return results^
+
     def average(self) -> Self.M:
         return self.total / self.test_count
 
-    def _observe(mut self, sample: Self.M) raises -> Bool:
+    def _observe(
+        mut self, var total: Self.M, repetitions: Int = 1
+    ) raises -> Bool:
+        var sample = total / repetitions
         var improved = _has_improvement(self.minimum, sample)
-        self.test_count += 1
-        self.total = self.total + sample
+        self.test_count += repetitions
+        self.total = self.total + total
         self.minimum = self.minimum.min(sample)
         self.maximum = self.maximum.max(sample)
         return improved
@@ -134,33 +149,42 @@ struct RepetitionTester[I: Instrument, //]:
 
     var _instrument: Self.I
     var _patience: Int
-    var _max_repetitions: Optional[Int]
+    var _batch_reps: Int
+    var _max_reps: Optional[Int]
 
     def __init__(
         out self,
         var instrument: Self.I,
+        *,
         patience: Int = 10,
-        max_repetitions: Optional[Int] = 100,
+        batch_reps: Int = 1,
+        max_reps: Optional[Int] = 100,
     ) raises:
         if patience <= 0:
             raise Error("patience must be greater than zero")
-        if max_repetitions and max_repetitions.value() <= 0:
-            raise Error("max_repetitions must be greater than zero")
+        if batch_reps <= 0:
+            raise Error("batch_reps must be greater than zero")
+        if max_reps and max_reps.value() <= 0:
+            raise Error("max_reps must be greater than zero")
 
         self._instrument = instrument^
         self._patience = patience
-        self._max_repetitions = max_repetitions
+        self._batch_reps = batch_reps
+        self._max_reps = max_reps
 
-    def run[
-        function: def() thin raises -> None
-    ](mut self) raises -> RepetitionResults[Self.MetricType]:
-        """Measures `function` until its minima stop improving."""
+    def run(
+        mut self, f: Some[def() raises]
+    ) raises -> RepetitionResults[Self.MetricType]:
+        """Measures `f` until its minima stop improving."""
         var renderer = _LiveReport()
         renderer.start()
 
         try:
-            var first_sample = self._measure[function]()
-            var results = RepetitionResults[Self.MetricType](first_sample)
+            var first_batch_reps = self._next_batch_reps(0)
+            var first_total = self._measure(f, first_batch_reps)
+            var results = RepetitionResults[Self.MetricType]._from_batch(
+                first_total^, first_batch_reps
+            )
             var stale_repetitions = 0
             renderer.update(results)
 
@@ -168,12 +192,16 @@ struct RepetitionTester[I: Instrument, //]:
                 stale_repetitions < self._patience
                 and not self._reached_limit(results.test_count)
             ):
-                var sample = self._measure[function]()
-                if results._observe(sample):
+                var repetitions = min(
+                    self._next_batch_reps(results.test_count),
+                    self._patience - stale_repetitions,
+                )
+                var total = self._measure(f, repetitions)
+                if results._observe(total^, repetitions):
                     stale_repetitions = 0
                     renderer.update(results)
                 else:
-                    stale_repetitions += 1
+                    stale_repetitions += repetitions
                     renderer.tick(results)
 
             renderer.finish(results)
@@ -182,12 +210,13 @@ struct RepetitionTester[I: Instrument, //]:
             renderer.cancel()
             raise error^
 
-    def _measure[
-        function: def() thin raises -> None
-    ](mut self) raises -> Self.MetricType:
+    def _measure(
+        mut self, f: Some[def() raises], repetitions: Int
+    ) raises -> Self.MetricType:
         var start = self._instrument.measure()
         try:
-            function()
+            for _ in range(repetitions):
+                f()
         except error:
             raise Error(String(t"error while repetition testing: {error}"))
         var end = self._instrument.measure()
@@ -195,9 +224,17 @@ struct RepetitionTester[I: Instrument, //]:
         _require_comparable(delta)
         return delta^
 
+    def _next_batch_reps(self, completed_repetitions: Int) -> Int:
+        if self._max_reps:
+            return min(
+                self._batch_reps,
+                self._max_reps.value() - completed_repetitions,
+            )
+        return self._batch_reps
+
     def _reached_limit(self, total_repetitions: Int) -> Bool:
-        if self._max_repetitions:
-            return total_repetitions >= self._max_repetitions.value()
+        if self._max_reps:
+            return total_repetitions >= self._max_reps.value()
         return False
 
 
