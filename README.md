@@ -115,9 +115,8 @@ pixi run -e examples haversine-profile
 
 ## Repetition Testing
 
-`RepetitionTester` repeatedly measures one top-level function and stops after a
-configured number of consecutive runs produce no new minimum in any metric
-component:
+`RepetitionTester` repeatedly measures a function or capturing closure and
+stops after a configured number of calls in non-improving batches:
 
 ```mojo
 from professor import RepetitionTester, WallClock
@@ -131,15 +130,17 @@ def main() raises:
     var tester = RepetitionTester(
         WallClock(),
         patience=10,
-        max_repetitions=1_000,
+        batch_reps=10,
+        max_reps=1_000,
     )
-    _ = tester.run[read_file]()
+    _ = tester.run(read_file)
 ```
 
 Here `patience=10` means ten consecutive repetitions without improvement,
-not ten total repetitions. `max_repetitions` is an optional hard limit. The
-tester owns the instrument, samples it immediately before and after the
-function, then updates the component-wise minimum, maximum, and average.
+not ten total repetitions. `batch_reps` groups calls under one measurement and
+`max_reps` is an optional hard limit on total calls. The tester owns the
+instrument, samples it immediately before and after each batch, then updates
+the component-wise minimum, maximum, and average per call.
 
 On a terminal, the current statistics redraw in place beneath the spinner.
 Redirected output receives only the final table. `run()` returns the accumulated

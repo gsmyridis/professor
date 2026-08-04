@@ -39,6 +39,7 @@ def main() raises:
     var tester = RepetitionTester(
         WallClock(),
         patience=20,
-        max_repetitions=1_000,
+        batch_reps=1,
+        max_reps=1_000,
     )
-    _ = tester.run[integer_work]()
+    _ = tester.run(integer_work)
