@@ -17,7 +17,7 @@ from std.os.path import dirname
 from std.pathlib import cwd, Path
 from std.reflection import SourceLocation
 
-from .stat import ZoneStat
+from .stat import ZoneStatistics
 from .table import Align, Cell, Color, Column, Table, TableStyle
 
 
@@ -44,12 +44,20 @@ comptime _MANIFESTS: InlineArray[StaticString, 3] = [
 
 
 def zone_tables[
-    S: Metric
-](total: S, zones: List[ZoneStat[S]]) raises -> List[Table]:
-    """Builds one per-zone table for each component of the metric.
+    M: Metric
+](total: M, stats: List[ZoneStatistics[M]]) raises -> List[Table]:
+    """Builds one per-zone table for each scalar component of the metric.
 
     A single-valued metric yields exactly one table, titled with the program
     total.
+
+    Args:
+        total: Metric for the whole duration of the profiling.
+        stats: Aggregate statistics for each zone.
+
+    Returns:
+        A list of tables displaying the zone statistics for each scalar
+        component of the performance metric.
     """
     # The total's fields define the report's shape: one table per component,
     # in the order the metric declares them. `Metric.fields()` requires every
@@ -61,7 +69,7 @@ def zone_tables[
 
     var tables = List[Table](capacity=count)
     for index in range(count):
-        tables.append(_component_table(total_fields, zones, index, root))
+        tables.append(_component_table(total_fields, stats, index, root))
     return tables^
 
 
@@ -69,7 +77,7 @@ def _component_table[
     S: Metric
 ](
     total_fields: List[MetricField],
-    stats: List[ZoneStat[S]],
+    stats: List[ZoneStatistics[S]],
     index: Int,
     root: String,
 ) raises -> Table:
@@ -230,7 +238,7 @@ def _check_shape(
                 raise Error(SHAPE_ERROR)
 
 
-def _has_memory[S: Metric](stats: List[ZoneStat[S]]) -> Bool:
+def _has_memory[S: Metric](stats: List[ZoneStatistics[S]]) -> Bool:
     for ref stat in stats:
         if stat.memory:
             return True

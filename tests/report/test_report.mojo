@@ -317,7 +317,7 @@ def test_every_zone_appears_in_every_component_table() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 2)
+    assert_equal(len(rep.stats), 2)
 
     var out = _plain(rep)
     for table in rep.tables():

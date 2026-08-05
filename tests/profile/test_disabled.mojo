@@ -44,7 +44,7 @@ def test_runtime_profiler_is_a_noop() raises:
 
     var report = profiler.report()
     assert_equal(report.total.value, 0)
-    assert_equal(len(report.zones), 0)
+    assert_equal(len(report.stats), 0)
     assert_equal(len(report.tables()), 0)
 
 
@@ -65,7 +65,7 @@ def test_global_profiler_does_not_create_measurements() raises:
 
     var report = Prof.report()
     assert_equal(report.total.value, 0)
-    assert_equal(len(report.zones), 0)
+    assert_equal(len(report.stats), 0)
     assert_equal(len(report.tables()), 0)
 
 

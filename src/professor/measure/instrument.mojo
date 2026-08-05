@@ -109,10 +109,15 @@ trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):
 
 
 trait Instrument(Defaultable, ImplicitlyDeletable, Movable):
-    """Produces `Metric` samples on demand (wall clock, hardware counters, ...).
-    """
+    """Produces `Metric` samples on demand."""
 
     comptime MetricType: Metric
+    """Type of the sampled metric."""
 
     def measure(mut self) -> Self.MetricType:
+        """Samples an associated metric.
+
+        Returns:
+            The sampled value.
+        """
         ...

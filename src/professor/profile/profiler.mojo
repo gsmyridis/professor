@@ -5,7 +5,7 @@ from std.reflection import call_location, SourceLocation
 from std.sys.intrinsics import unlikely
 
 from professor.measure import Instrument, Memory
-from professor.report import Report, ZoneStat
+from professor.report import Report, ZoneStatistics
 
 from ._consts import is_profiling_enabled, UNCLAIMED_ANCHOR_LABEL
 from ._registry import _SiteKey, _hash_comp_time, _site_hash
@@ -328,7 +328,8 @@ struct Profiler[
             )
         if not st[].has_ended:
             raise Error("report() called before end()")
-        var stats = List[ZoneStat[Self.I.MetricType]](
+
+        var stats = List[ZoneStatistics[Self.I.MetricType]](
             capacity=len(st[].anchors)
         )
         for ref a in st[].anchors:
@@ -338,7 +339,7 @@ struct Profiler[
             if a.tracks_memory:
                 memory = a.memory
             stats.append(
-                ZoneStat[Self.I.MetricType](
+                ZoneStatistics[Self.I.MetricType](
                     a.label,
                     a.loc,
                     a.hit_count,

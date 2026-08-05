@@ -1,15 +1,18 @@
 from professor.measure import Metric
 
 from ._layout import zone_tables
-from .stat import ZoneStat
+from .stat import ZoneStatistics
 from .table import Table
 
 
-struct Report[S: Metric](Writable):
+struct Report[M: Metric](Defaultable, Writable):
     """The result of a profiling run: per-site statistics."""
 
-    var total: Self.S
-    var zones: List[ZoneStat[Self.S]]
+    var total: Self.M
+    """Metric for the whole duration of the profiling."""
+
+    var stats: List[ZoneStatistics[Self.M]]
+    """Aggregate statistics for each zone."""
 
     var _tables: List[Table]
     """The laid-out report, built once at construction.
@@ -23,16 +26,16 @@ struct Report[S: Metric](Writable):
 
     def __init__(out self):
         """Creates an empty, unrendered report."""
-        self.total = Self.S()
-        self.zones = List[ZoneStat[Self.S]]()
+        self.total = Self.M()
+        self.stats = List[ZoneStatistics[Self.M]]()
         self._tables = List[Table]()
 
     def __init__(
-        out self, var total: Self.S, var zones: List[ZoneStat[Self.S]]
+        out self, var total: Self.M, var stats: List[ZoneStatistics[Self.M]]
     ) raises:
-        self._tables = zone_tables[Self.S](total, zones)
+        self._tables = zone_tables[Self.M](total, stats)
         self.total = total^
-        self.zones = zones^
+        self.stats = stats^
 
     def tables(self) -> List[Table]:
         """Returns one table per metric component, for restyling before
