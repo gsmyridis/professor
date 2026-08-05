@@ -1,3 +1,4 @@
+from std.sys import size_of
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 from professor import GlobalProfiler, Instrument, Metric, Nanos, Profiler
@@ -531,6 +532,64 @@ def test_with_statement_closes_zone_on_raise() raises:
     assert_equal(len(rep.zones), 1)
     assert_equal(rep.zones[0].count, 1)
     assert_equal(rep.zones[0].inclusive.value, 1)
+
+
+def test_byte_tracking_aggregates_reentered_zones() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-reentry"]
+
+    Prof.start()
+    for bytes in [4, 6]:
+        with Prof.zone["work"](bytes=bytes):
+            pass
+    Prof.end()
+
+    var rep = Prof.report()
+    assert_equal(len(rep.zones), 1)
+    assert_true(rep.zones[0].memory)
+    assert_equal(rep.zones[0].memory.value().value, 10)
+    assert_equal(rep.zones[0].inclusive.value, 2)
+
+    var table = String(rep)
+    assert_true(table.find("Throughput") != -1)
+    assert_true(table.find("5.0 GB/s") != -1)
+
+
+def test_only_byte_tracking_handles_carry_byte_state() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-handle-size"]
+
+    Prof.start()
+    var ordinary = Prof.zone["ordinary"]()
+    var tracked = Prof.zone["tracked"](bytes=1)
+    comptime assert (
+        size_of[type_of(tracked)]()
+        == size_of[type_of(ordinary)]() + 2 * size_of[Int]()
+    )
+    tracked^.close()
+    ordinary^.close()
+    Prof.end()
+
+
+comptime ByteRecProf = GlobalProfiler[Ticker, Tag="test.bytes-recursion"]
+
+
+def _record_recursive_bytes(depth: Int, bytes: Int):
+    var zone = ByteRecProf.zone["recursive"](bytes=bytes)
+    if depth > 0:
+        _record_recursive_bytes(depth - 1, bytes // 2)
+    zone^.close()
+
+
+def test_recursive_byte_tracking_matches_outermost_inclusive_span() raises:
+    ByteRecProf.start()
+    _record_recursive_bytes(1, 100)
+    ByteRecProf.end()
+
+    var rep = ByteRecProf.report()
+    assert_equal(len(rep.zones), 1)
+    assert_equal(rep.zones[0].count, 2)
+    assert_equal(rep.zones[0].inclusive.value, 3)
+    assert_true(rep.zones[0].memory)
+    assert_equal(rep.zones[0].memory.value().value, 100)
 
 
 def main() raises:

@@ -6,7 +6,13 @@ and retired instructions, say) gets one table each, so every table can be read
 -- and eventually sorted -- along its own axis.
 """
 
-from professor.measure import Metric, MetricField
+from professor.measure import (
+    Memory,
+    Metric,
+    MetricDimension,
+    MetricField,
+    Throughput,
+)
 from std.os.path import dirname
 from std.pathlib import cwd, Path
 from std.reflection import SourceLocation
@@ -22,6 +28,7 @@ comptime _INCLUSIVE_LABEL = "Inclusive"
 comptime _EXCLUSIVE_LABEL = "Exclusive"
 comptime _INCLUSIVE_MIN_LABEL = "Min. Inclusive"
 comptime _INCLUSIVE_PER_ITER_LABEL = "Inclusive/Iter"
+comptime _THROUGHPUT_LABEL = "Throughput"
 comptime _INCLUSIVE_PERCENT_LABEL = "Inclusive (%)"
 comptime _EXCLUSIVE_PERCENT_LABEL = "Exclusive (%)"
 
@@ -66,19 +73,26 @@ def _component_table[
     index: Int,
     root: String,
 ) raises -> Table:
+    var show_throughput = _is_time_field(total_fields[index]) and _has_memory(
+        stats
+    )
+    var columns = [
+        Column(_ZONE_LABEL),
+        Column(_SITE_LABEL),
+        Column(_COUNT_LABEL, align=Align.RIGHT),
+        Column(_INCLUSIVE_LABEL, align=Align.RIGHT),
+        Column(_EXCLUSIVE_LABEL, align=Align.RIGHT),
+        Column(_INCLUSIVE_MIN_LABEL, align=Align.RIGHT),
+        Column(_INCLUSIVE_PER_ITER_LABEL, align=Align.RIGHT),
+    ]
+    if show_throughput:
+        columns.append(Column(_THROUGHPUT_LABEL, align=Align.RIGHT))
+    columns.append(Column(_INCLUSIVE_PERCENT_LABEL, align=Align.RIGHT))
+    columns.append(Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.RIGHT))
+
     var table = Table(
         _title(total_fields, index),
-        [
-            Column(_ZONE_LABEL),
-            Column(_SITE_LABEL),
-            Column(_COUNT_LABEL, align=Align.RIGHT),
-            Column(_INCLUSIVE_LABEL, align=Align.RIGHT),
-            Column(_EXCLUSIVE_LABEL, align=Align.RIGHT),
-            Column(_INCLUSIVE_MIN_LABEL, align=Align.RIGHT),
-            Column(_INCLUSIVE_PER_ITER_LABEL, align=Align.RIGHT),
-            Column(_INCLUSIVE_PERCENT_LABEL, align=Align.RIGHT),
-            Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.RIGHT),
-        ],
+        columns^,
         TableStyle(),
     )
 
@@ -107,15 +121,23 @@ def _component_table[
             Cell(exclusive[index].value.copy()),
             Cell(inclusive_min[index].value.copy()),
             Cell(inclusive_per_iter[index].value.copy()),
+        ]
+        if show_throughput:
+            cells.append(
+                Cell(_format_throughput(stat.memory, inclusive[index]))
+            )
+        cells.append(
             Cell(
                 _format_percent(incl_percent),
                 color=_percent_color(incl_percent),
-            ),
+            )
+        )
+        cells.append(
             Cell(
                 _format_percent(excl_percent),
                 color=_percent_color(excl_percent),
-            ),
-        ]
+            )
+        )
         table.add_row(cells^)
 
     if len(stats) == 0:
@@ -193,6 +215,47 @@ def _check_shape(
     for i in range(len(fields)):
         if fields[i].name != total_fields[i].name:
             raise Error(SHAPE_ERROR)
+        if fields[i].unit and not total_fields[i].unit:
+            raise Error(SHAPE_ERROR)
+        if total_fields[i].unit and not fields[i].unit:
+            raise Error(SHAPE_ERROR)
+        if fields[i].unit:
+            ref unit = fields[i].unit.value()
+            ref total_unit = total_fields[i].unit.value()
+            if (
+                unit.dimension != total_unit.dimension
+                or unit.scale != total_unit.scale
+                or unit.symbol != total_unit.symbol
+            ):
+                raise Error(SHAPE_ERROR)
+
+
+def _has_memory[S: Metric](stats: List[ZoneStat[S]]) -> Bool:
+    for ref stat in stats:
+        if stat.memory:
+            return True
+    return False
+
+
+def _is_time_field(field: MetricField) -> Bool:
+    if not field.unit:
+        return False
+    return field.unit.value().dimension == MetricDimension.TIME
+
+
+def _format_throughput(
+    memory: Optional[Memory[]], field: MetricField
+) -> String:
+    if not memory or not field.scalar or not field.unit:
+        return "N/A"
+    ref unit = field.unit.value()
+    if unit.dimension != MetricDimension.TIME:
+        return "N/A"
+    var elapsed_nanos = field.scalar.value() * unit.scale
+    if elapsed_nanos <= 0.0:
+        return "N/A"
+
+    return String(Throughput(memory.value(), elapsed_nanos))
 
 
 def _percent_value(

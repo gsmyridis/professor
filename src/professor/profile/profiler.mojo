@@ -4,7 +4,7 @@ from std.os import abort
 from std.reflection import call_location, SourceLocation
 from std.sys.intrinsics import unlikely
 
-from professor.measure import Instrument
+from professor.measure import Instrument, Memory
 from professor.report import Report, ZoneStat
 
 from ._consts import is_profiling_enabled, UNCLAIMED_ANCHOR_LABEL
@@ -15,7 +15,12 @@ from ._state import (
     _CoreProfilerState,
     CAPACITY_DEFAULT,
 )
-from ._zone import _EnabledProfileZone, _ProfileZone
+from ._zone import (
+    _EnabledProfileZone,
+    _MemoryZoneData,
+    _NoMemoryZoneData,
+    _ProfileZone,
+)
 
 
 # ===------------------------------------------------------------------------===
@@ -206,6 +211,23 @@ struct Profiler[
 
     @always_inline
     def zone[
+        origin: MutOrigin, //, name: StaticString, index: Int
+    ](
+        ref[origin] self,
+        *,
+        bytes: Int,
+    ) -> _ProfileZone[
+        Self.I, Self.Capacity, origin, True
+    ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
+        """Opens a pinned zone that records processed bytes."""
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return self._zone_at[name, index](loc, bytes)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, origin, True]()
+
+    @always_inline
+    def zone[
         origin: MutOrigin, //, name: StaticString
     ](ref[origin] self) -> _ProfileZone[Self.I, Self.Capacity, origin]:
         """Opens a zone resolved from its label and source location."""
@@ -214,6 +236,23 @@ struct Profiler[
             return self._zone_at[name](loc)
         else:
             return _ProfileZone[Self.I, Self.Capacity, origin]()
+
+    @always_inline
+    def zone[
+        origin: MutOrigin, //, name: StaticString
+    ](
+        ref[origin] self,
+        *,
+        bytes: Int,
+    ) -> _ProfileZone[
+        Self.I, Self.Capacity, origin, True
+    ]:
+        """Opens a site-resolved zone that records processed bytes."""
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return self._zone_at[name](loc, bytes)
+        else:
+            return _ProfileZone[Self.I, Self.Capacity, origin, True]()
 
     @always_inline
     def _zone_at[
@@ -225,7 +264,20 @@ struct Profiler[
         Self.I, Self.Capacity, origin
     ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
         var st = self._core_state()
-        return _open_zone[name](st, index + 1, loc)
+        return _open_zone[False, name](st, index + 1, loc, 0)
+
+    @always_inline
+    def _zone_at[
+        origin: MutOrigin, //, name: StaticString, index: Int
+    ](
+        ref[origin] self,
+        loc: SourceLocation,
+        bytes: Int,
+    ) -> _ProfileZone[
+        Self.I, Self.Capacity, origin, True
+    ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
+        var st = self._core_state()
+        return _open_zone[True, name](st, index + 1, loc, bytes)
 
     @always_inline
     def _zone_at[
@@ -239,7 +291,25 @@ struct Profiler[
         var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
         var idx = st[].registry.get_index(key^)
         var core = UnsafePointer(to=st[].core).unsafe_origin_cast[origin]()
-        return _open_zone[name](core, idx, loc)
+        return _open_zone[False, name](core, idx, loc, 0)
+
+    @always_inline
+    def _zone_at[
+        origin: MutOrigin, //, name: StaticString
+    ](
+        ref[origin] self,
+        loc: SourceLocation,
+        bytes: Int,
+    ) -> _ProfileZone[
+        Self.I, Self.Capacity, origin, True
+    ]:
+        comptime name_hash = _hash_comp_time(name)
+        var st = self._state()
+        var h = _site_hash(name_hash, loc)
+        var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
+        var idx = st[].registry.get_index(key^)
+        var core = UnsafePointer(to=st[].core).unsafe_origin_cast[origin]()
+        return _open_zone[True, name](core, idx, loc, bytes)
 
     # ===--------------------------------------------------------------------===
     # Produce report
@@ -264,6 +334,9 @@ struct Profiler[
         for ref a in st[].anchors:
             if a.hit_count == 0:
                 continue
+            var memory: Optional[Memory[]] = None
+            if a.tracks_memory:
+                memory = a.memory
             stats.append(
                 ZoneStat[Self.I.MetricType](
                     a.label,
@@ -272,6 +345,7 @@ struct Profiler[
                     a.inclusive.copy(),
                     a.exclusive.copy(),
                     a.inclusive_min.copy(),
+                    memory,
                 )
             )
         return Report[Self.I.MetricType](st[].total_metric.copy(), stats^)
@@ -373,6 +447,22 @@ struct GlobalProfiler[
     @always_inline
     @staticmethod
     def zone[
+        name: StaticString, index: Int
+    ](*, bytes: Int) -> _ProfileZone[
+        Self.I, Self.Capacity, MutUntrackedOrigin, True
+    ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
+        """Opens a pinned global zone that records processed bytes."""
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return Self._profiler()[]._zone_at[name, index](loc, bytes)
+        else:
+            return _ProfileZone[
+                Self.I, Self.Capacity, MutUntrackedOrigin, True
+            ]()
+
+    @always_inline
+    @staticmethod
+    def zone[
         name: StaticString
     ]() -> _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]:
         comptime if is_profiling_enabled():
@@ -381,6 +471,22 @@ struct GlobalProfiler[
         else:
             return _ProfileZone[Self.I, Self.Capacity, MutUntrackedOrigin]()
 
+    @always_inline
+    @staticmethod
+    def zone[
+        name: StaticString
+    ](*, bytes: Int) -> _ProfileZone[
+        Self.I, Self.Capacity, MutUntrackedOrigin, True
+    ]:
+        """Opens a site-resolved global zone that records processed bytes."""
+        comptime if is_profiling_enabled():
+            var loc = call_location()
+            return Self._profiler()[]._zone_at[name](loc, bytes)
+        else:
+            return _ProfileZone[
+                Self.I, Self.Capacity, MutUntrackedOrigin, True
+            ]()
+
 
 @always_inline
 def _open_zone[
@@ -388,16 +494,22 @@ def _open_zone[
     C: Int,
     origin: MutOrigin,
     //,
+    tracks_memory: Bool,
     label: StaticString,
 ](
     st: UnsafePointer[_CoreProfilerState[I, C], origin],
     idx: Int,
     loc: SourceLocation,
-) -> _ProfileZone[I, C, origin] where (C > 0):
+    bytes: Int,
+) -> _ProfileZone[I, C, origin, tracks_memory] where (C > 0):
     comptime assert label != UNCLAIMED_ANCHOR_LABEL, String(
         t"The semantic label of a profiling zone cannot be empty, i.e."
         t" ('{UNCLAIMED_ANCHOR_LABEL}')."
     )
+
+    comptime if tracks_memory:
+        if unlikely(bytes < 0):
+            abort("profile zone byte count cannot be negative")
 
     if unlikely(not st[].has_started or st[].has_ended):
         abort("profile zones must be opened between start() and end()")
@@ -418,6 +530,7 @@ def _open_zone[
     if unlikely(anchor.label == UNCLAIMED_ANCHOR_LABEL):
         anchor.label = label
         anchor.loc = loc
+        anchor.tracks_memory = tracks_memory
 
     # We place the error condition behind an unlikely hint because it is,
     # and also if it is, we do not care about the performance.
@@ -430,18 +543,38 @@ def _open_zone[
             )
         )
 
+    if unlikely(anchor.tracks_memory != tracks_memory):
+        abort(
+            String(
+                t"profile anchor {idx} cannot mix ordinary and byte-tracking"
+                t" zones"
+            )
+        )
+
     # Sample as late as possible so open-side bookkeeping stays out of the
     # measured interval.
     var sample = st[].instrument.measure()
 
-    return _ProfileZone[I, C, origin](
-        _EnabledProfileZone[I, C, origin](
+    comptime MemoryDataType: RegisterPassable = (
+        _MemoryZoneData if tracks_memory else _NoMemoryZoneData
+    )
+    var memory: MemoryDataType
+    comptime if tracks_memory:
+        memory = rebind_var[MemoryDataType](
+            _MemoryZoneData(bytes, anchor.memory.value)
+        )
+    else:
+        memory = rebind_var[MemoryDataType](_NoMemoryZoneData())
+
+    return _ProfileZone[I, C, origin, tracks_memory](
+        _EnabledProfileZone[I, C, origin, tracks_memory](
             label,
             idx,
             parent,
             depth,
             prev_inclusive^,
             sample^,
+            memory^,
             st,
         )
     )

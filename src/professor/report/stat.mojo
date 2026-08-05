@@ -1,4 +1,4 @@
-from professor.measure import Metric
+from professor.measure import Memory, Metric
 from std.reflection import SourceLocation
 
 
@@ -12,3 +12,5 @@ struct ZoneStat[S: Metric](Copyable, Movable):
     var inclusive: Self.S
     var exclusive: Self.S
     var inclusive_min: Self.S
+    var memory: Optional[Memory[]]
+    """Processed bytes when this site records workload size."""

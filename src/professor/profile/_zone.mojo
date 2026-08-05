@@ -18,12 +18,32 @@ struct _DisabledProfileZone(Movable):
 
 
 @fieldwise_init
+struct _NoMemoryZoneData(ImplicitlyCopyable, RegisterPassable):
+    pass
+
+
+@fieldwise_init
+struct _MemoryZoneData(ImplicitlyCopyable, RegisterPassable):
+    var bytes: Int
+    var previous: Int
+
+
+@fieldwise_init
 @explicit_destroy("The profiling zone must be closed with: .close()")
-struct _EnabledProfileZone[I: Instrument, C: Int, origin: MutOrigin](
-    Movable
-) where (C > 0):
+struct _EnabledProfileZone[
+    I: Instrument,
+    C: Int,
+    origin: MutOrigin,
+    tracks_memory: Bool,
+](Movable) where (
+    C > 0
+):
     comptime MetricType = Self.I.MetricType
     """Type of the performance metric."""
+
+    comptime _MemoryDataType: RegisterPassable = (
+        _MemoryZoneData if Self.tracks_memory else _NoMemoryZoneData
+    )
 
     var label: StaticString
     """Semantic label."""
@@ -42,6 +62,9 @@ struct _EnabledProfileZone[I: Instrument, C: Int, origin: MutOrigin](
 
     var metric_open: Self.MetricType
     """Value of the metric when the block was opened."""
+
+    var memory: Self._MemoryDataType
+    """Byte-count state, zero-sized for ordinary zones."""
 
     var prof_state: UnsafePointer[
         _CoreProfilerState[Self.I, Self.C], Self.origin
@@ -68,6 +91,10 @@ struct _EnabledProfileZone[I: Instrument, C: Int, origin: MutOrigin](
         else:
             anchor.inclusive_min = anchor.inclusive_min.min(delta)
 
+        comptime if Self.tracks_memory:
+            var memory = rebind[_MemoryZoneData](self.memory)
+            anchor.memory.value = memory.previous + memory.bytes
+
         # Account for recursive calls
         self.prof_state[].current_open_depth = self.depth
         self.prof_state[].current_open_idx = self.parent_index
@@ -76,10 +103,19 @@ struct _EnabledProfileZone[I: Instrument, C: Int, origin: MutOrigin](
 
 
 @explicit_destroy("The profiling zone must be closed with: .close()")
-struct _ProfileZone[I: Instrument, C: Int, origin: MutOrigin] where C > 0:
+struct _ProfileZone[
+    I: Instrument,
+    C: Int,
+    origin: MutOrigin,
+    tracks_memory: Bool = False,
+] where (
+    C > 0
+):
     """A profile-zone handle that is empty when profiling is disabled."""
 
-    comptime _EnabledType = _EnabledProfileZone[Self.I, Self.C, Self.origin]
+    comptime _EnabledType = _EnabledProfileZone[
+        Self.I, Self.C, Self.origin, Self.tracks_memory
+    ]
     comptime _DisabledType = _DisabledProfileZone
 
     comptime _StorageType: Movable = (

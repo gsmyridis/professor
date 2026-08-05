@@ -1,12 +1,15 @@
 from std.testing import assert_equal, assert_true, TestSuite
 
 from professor import (
+    Count,
     Instrument,
     Metric,
     MetricField,
     Nanos,
     GlobalProfiler,
     Report,
+    Time,
+    TimeUnit,
 )
 from professor.report.table import Align, ColorMode
 
@@ -76,6 +79,66 @@ struct Ticker(Instrument):
     def measure(mut self) -> Nanos:
         self.now += 1
         return Nanos(self.now)
+
+
+@fieldwise_init
+struct TimedFaults(Defaultable, ImplicitlyCopyable, Metric):
+    var elapsed: Time[TimeUnit.MICROS]
+    var faults: Count["page-faults"]
+
+    def __init__(out self):
+        self = Self(Time[TimeUnit.MICROS](), Count["page-faults"]())
+
+    def __sub__(self, other: Self) -> Self:
+        return Self(
+            self.elapsed - other.elapsed,
+            self.faults - other.faults,
+        )
+
+    def __add__(self, other: Self) -> Self:
+        return Self(
+            self.elapsed + other.elapsed,
+            self.faults + other.faults,
+        )
+
+    def __truediv__(self, count: Int) -> Self:
+        return Self(self.elapsed / count, self.faults / count)
+
+    def min(self, other: Self) -> Self:
+        return Self(
+            self.elapsed.min(other.elapsed),
+            self.faults.min(other.faults),
+        )
+
+    def max(self, other: Self) -> Self:
+        return Self(
+            self.elapsed.max(other.elapsed),
+            self.faults.max(other.faults),
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(self.elapsed, ", ", self.faults)
+
+    def fields(self) -> List[MetricField]:
+        return [
+            self.elapsed.field["wall clock"](),
+            self.faults.field(),
+        ]
+
+
+struct TimedFaultTicker(Instrument):
+    comptime MetricType = TimedFaults
+    var now: Int
+
+    def __init__(out self):
+        self.now = 0
+
+    def measure(mut self) -> TimedFaults:
+        self.now += 1
+        return TimedFaults(
+            Time[TimeUnit.MICROS](self.now),
+            Count["page-faults"](self.now * 2),
+        )
 
 
 comptime MinimumProf = GlobalProfiler[Ticker, Tag="test.report.minimums"]
@@ -200,6 +263,27 @@ def test_each_component_gets_its_own_table() raises:
     var out = _plain(rep)
     assert_true(out.startswith("cycles — total 300\n\n"))
     assert_true(out.find("instructions — total 750\n\n") != -1)
+
+
+def test_heterogeneous_metric_applies_throughput_only_to_time() raises:
+    comptime Prof = GlobalProfiler[
+        TimedFaultTicker, Tag="test.report.typed-throughput"
+    ]
+
+    Prof.start()
+    with Prof.zone["work"](bytes=2_000):
+        pass
+    Prof.end()
+
+    var tables = Prof.report().tables()
+    assert_equal(len(tables), 2)
+    assert_equal(tables[0].num_columns(), 10)
+    assert_equal(tables[0].column(7).header, "Throughput")
+    assert_equal(tables[1].num_columns(), 9)
+
+    tables[0].style.color = ColorMode.NEVER
+    var time_table = String(tables[0])
+    assert_true(time_table.find("2.0 GB/s") != -1)
 
 
 def test_a_component_table_holds_only_its_own_values() raises:

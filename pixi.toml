@@ -34,6 +34,7 @@ test-report = """
 """
 
 test-reptest = "mojo run -I src tests/reptest/test_reptest.mojo"
+test-measure = "mojo run -I src tests/measure/test_quantity.mojo"
 
 test-perf = """
     mojo run -I src tests/os/linux/test_config.mojo \
@@ -75,6 +76,7 @@ test = { depends-on = [
   "test-profile-disabled",
   "test-report",
   "test-reptest",
+  "test-measure",
   "test-backend",
   "test-arch",
 ] }

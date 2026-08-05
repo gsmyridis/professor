@@ -34,8 +34,13 @@ def test_runtime_profiler_is_a_noop() raises:
     # Both zone forms are valid even outside a profiling session.
     with profiler.zone["scoped"]():
         pass
+    with profiler.zone["bytes"](bytes=1024):
+        pass
     var zone = profiler.zone["manual", 0]()
     zone^.close()
+    var byte_zone = profiler.zone["manual-bytes", 1](bytes=2048)
+    comptime assert size_of[type_of(byte_zone)]() == 0
+    byte_zone^.close()
 
     var report = profiler.report()
     assert_equal(report.total.value, 0)
@@ -50,6 +55,8 @@ def test_global_profiler_does_not_create_measurements() raises:
     Prof.end()
     Prof.start()
     with Prof.zone["scoped"]():
+        pass
+    with Prof.zone["bytes"](bytes=1024):
         pass
     var zone = Prof.zone["manual", 0]()
     comptime assert size_of[type_of(zone)]() == 0

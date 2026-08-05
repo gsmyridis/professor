@@ -40,7 +40,7 @@ from professor import GlobalProfiler, WallClock
 comptime Prof = GlobalProfiler[WallClock]
 
 def parse(input: String) -> Int:
-    with Prof.zone["parse"]():
+    with Prof.zone["parse"](bytes=input.byte_length()):
         var result = 0
         for codepoint in input.codepoints():
             result += Int(codepoint.is_ascii_digit())
@@ -100,7 +100,8 @@ measurement bug.
 `Prof.start()` and `Prof.end()` bracket the program-wide measurement interval.
 `Prof.report()` prints its total plus per-zone hit count, inclusive and
 exclusive metrics, inclusive time per hit, and inclusive percentage of the
-program total. Recursive zones are accounted for correctly.
+program total. A zone supplied with `bytes=` also reports aggregate throughput
+for time metrics. Recursive zones are accounted for correctly.
 
 For a complete worked example — a JSON parser computing haversine distances,
 with zones around parsing, tokenization, and computation — see
@@ -248,6 +249,19 @@ For each zone the report currently includes:
 - `inclusive`: metric accumulated while the zone was open, children included.
 - `exclusive`: inclusive minus the metric attributed to nested zones.
 - `loc`: source file, line, and column for the profiling call site.
+- `memory`: processed bytes when the zone was opened with `bytes=`.
+
+Pass a non-negative byte count to record a zone's logical workload:
+
+```mojo
+with MyProfiler.zone["parse"](bytes=input.byte_length()):
+    parse(input)
+```
+
+Bytes are aggregated with the zone's inclusive interval. For a typed time
+metric, the report adds a `Throughput` column in GB/s and computes the rate once
+from aggregate bytes and aggregate time. Ordinary zones use a separately
+specialized handle and do not carry or update a byte count.
 
 The report's `total` field contains the metric elapsed between `start()` and
 `end()`. Metrics that do not provide a scalar value still print totals and
@@ -286,6 +300,22 @@ per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
 same. Each table can therefore also be read, and eventually sorted, along its
 own axis. Percentages are computed per component, each against the
 corresponding component of the program total.
+
+Scalar metric components can encode their storage unit as a compile-time
+parameter without adding instance storage:
+
+```mojo
+@fieldwise_init
+struct CpuMetric(Defaultable, ImplicitlyCopyable, Metric):
+    var elapsed: Time[TimeUnit.NANOS]
+    var cycles: Count["cycles"]
+    var instructions: Count["instructions"]
+    var cache_misses: Count["cache-misses"]
+```
+
+The composite reading above occupies four integers. Unit names and scales are
+materialized only by `fields()` while constructing a report. `Nanos` and
+`Cycles` remain aliases for `Time[TimeUnit.NANOS]` and `Count["cycles"]`.
 
 A metric with one component yields exactly one table, titled `Program total:`.
 

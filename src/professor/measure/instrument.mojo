@@ -1,3 +1,37 @@
+@fieldwise_init
+struct MetricDimension(Equatable, ImplicitlyCopyable):
+    """The physical dimension of a reportable metric component."""
+
+    var code: Int
+
+    comptime OPAQUE = Self(0)
+    comptime TIME = Self(1)
+    comptime COUNT = Self(2)
+    comptime MEMORY = Self(3)
+
+
+struct MetricUnit(Copyable):
+    """Report-time description of a metric component's storage unit.
+
+    `scale` converts one stored unit into the dimension's canonical unit:
+    nanoseconds for time, individual events for counts, and bytes for memory.
+    """
+
+    var dimension: MetricDimension
+    var scale: Float64
+    var symbol: String
+
+    def __init__(
+        out self,
+        dimension: MetricDimension,
+        scale: Float64,
+        var symbol: String,
+    ):
+        self.dimension = dimension
+        self.scale = scale
+        self.symbol = symbol^
+
+
 struct MetricField(Copyable):
     """One named component of a metric reading, ready to be tabulated."""
 
@@ -10,15 +44,20 @@ struct MetricField(Copyable):
     var scalar: Optional[Float64]
     """Numeric value used for relative comparisons; `None` if incomparable."""
 
+    var unit: Optional[MetricUnit]
+    """Storage unit metadata for derived report values, when available."""
+
     def __init__(
         out self,
         var name: String,
         var value: String,
         scalar: Optional[Float64] = None,
+        var unit: Optional[MetricUnit] = None,
     ):
         self.name = name^
         self.value = value^
         self.scalar = scalar
+        self.unit = unit^
 
 
 trait Metric(Copyable, Defaultable, ImplicitlyDeletable, Writable):

@@ -3,7 +3,7 @@ from ._anchor import _Anchor
 from ._registry import _Registry
 
 comptime ROOT_ANCHOR_INDEX = 0
-comptime CAPACITY_DEFAULT = 1024
+comptime CAPACITY_DEFAULT = 64
 
 # ===------------------------------------------------------------------------===
 # Core profiler state
