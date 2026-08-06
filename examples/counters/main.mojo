@@ -29,7 +29,14 @@ from std.math import sqrt
 from std.os import abort
 from std.time import perf_counter_ns, sleep
 
-from professor import Instrument, Metric, MetricField, GlobalProfiler
+from professor import (
+    Count,
+    Cycles,
+    GlobalProfiler,
+    Instrument,
+    Metric,
+    Nanos,
+)
 from professor.os.apple import PortableEvent, Sampler, ThreadSampler
 
 
@@ -39,94 +46,14 @@ from professor.os.apple import PortableEvent, Sampler, ThreadSampler
 
 
 @fieldwise_init
-struct PmuCounters(Defaultable, ImplicitlyCopyable, Metric):
+struct PmuCounters(Metric):
     """One reading of the wall clock and of each counter this example programs.
     """
 
-    var nanos: Int
-    var cycles: Int
-    var instructions: Int
-    var cache_misses: Int
-
-    def __init__(out self):
-        self = Self(0, 0, 0, 0)
-
-    def __sub__(self, o: Self) -> Self:
-        return Self(
-            self.nanos - o.nanos,
-            self.cycles - o.cycles,
-            self.instructions - o.instructions,
-            self.cache_misses - o.cache_misses,
-        )
-
-    def __add__(self, o: Self) -> Self:
-        return Self(
-            self.nanos + o.nanos,
-            self.cycles + o.cycles,
-            self.instructions + o.instructions,
-            self.cache_misses + o.cache_misses,
-        )
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(
-            self.nanos // count,
-            self.cycles // count,
-            self.instructions // count,
-            self.cache_misses // count,
-        )
-
-    def min(self, o: Self) -> Self:
-        return Self(
-            min(self.nanos, o.nanos),
-            min(self.cycles, o.cycles),
-            min(self.instructions, o.instructions),
-            min(self.cache_misses, o.cache_misses),
-        )
-
-    def max(self, o: Self) -> Self:
-        return Self(
-            max(self.nanos, o.nanos),
-            max(self.cycles, o.cycles),
-            max(self.instructions, o.instructions),
-            max(self.cache_misses, o.cache_misses),
-        )
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(
-            self.nanos,
-            "ns, ",
-            self.cycles,
-            " cycles, ",
-            self.instructions,
-            " insns, ",
-            self.cache_misses,
-            " misses",
-        )
-
-    def fields(self) -> List[MetricField]:
-        """Names the components so the report can tabulate them separately.
-
-        The third element of each field is the scalar used for percentages.
-        Pass `None` for a component that should show `N/A` instead -- a
-        derived ratio such as instructions per cycle, which would be a fine
-        fifth field here, is not a share of anything.
-        """
-        return [
-            MetricField(
-                "wall clock", String(t"{self.nanos}ns"), Float64(self.nanos)
-            ),
-            MetricField("cycles", String(self.cycles), Float64(self.cycles)),
-            MetricField(
-                "instructions",
-                String(self.instructions),
-                Float64(self.instructions),
-            ),
-            MetricField(
-                "L1D load misses",
-                String(self.cache_misses),
-                Float64(self.cache_misses),
-            ),
-        ]
+    var nanos: Nanos
+    var cycles: Cycles
+    var instructions: Count["instructions"]
+    var cache_misses: Count["L1D load misses"]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -167,12 +94,15 @@ struct Pmu(Instrument):
     def measure(mut self) -> PmuCounters:
         # The clock is read first at both ends of a zone, so a zone's wall
         # time carries exactly one counter read -- the one that opened it.
-        var nanos = Int(perf_counter_ns())
+        var nanos = UInt64(perf_counter_ns())
         try:
             # Values come back in the order the events were added.
             var values = self._thread.sample()
             return PmuCounters(
-                nanos, Int(values[0]), Int(values[1]), Int(values[2])
+                Nanos(nanos),
+                Cycles(values[0]),
+                Count["instructions"](values[1]),
+                Count["L1D load misses"](values[2]),
             )
         except e:
             abort(String(t"could not read the hardware counters: {e}"))

@@ -1,7 +1,6 @@
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-from professor import GlobalProfiler, Instrument, Metric, Nanos, Profiler
-from professor.report.table import ColorMode
+from professor import GlobalProfiler, Instrument, Nanos, Profiler
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
@@ -10,7 +9,7 @@ from professor.report.table import ColorMode
 # measurer, so every test uses its own tag to get a fresh Ticker at 0.
 struct Ticker(Instrument):
     comptime MetricType = Nanos
-    var now: Int
+    var now: UInt64
 
     def __init__(out self):
         self.now = 0
@@ -20,55 +19,15 @@ struct Ticker(Instrument):
         return Nanos(self.now)
 
 
-@fieldwise_init
-struct OpaqueTicks(Defaultable, ImplicitlyCopyable, Metric):
-    """Custom metric that deliberately has no scalar report value."""
-
-    var value: Int
-
-    def __init__(out self):
-        self.value = 0
-
-    def __sub__(self, other: Self) -> Self:
-        return Self(self.value - other.value)
-
-    def __add__(self, other: Self) -> Self:
-        return Self(self.value + other.value)
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(self.value // count)
-
-    def min(self, other: Self) -> Self:
-        return self if self.value < other.value else other
-
-    def max(self, other: Self) -> Self:
-        return self if self.value > other.value else other
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(self.value, " ticks")
-
-
-struct OpaqueTicker(Instrument):
-    comptime MetricType = OpaqueTicks
-    var now: Int
-
-    def __init__(out self):
-        self.now = 0
-
-    def measure(mut self) -> OpaqueTicks:
-        self.now += 1
-        return OpaqueTicks(self.now)
-
-
 struct ConfigurableTicker(Instrument):
     comptime MetricType = Nanos
-    var now: Int
-    var step: Int
+    var now: UInt64
+    var step: UInt64
 
     def __init__(out self):
         self = Self(1)
 
-    def __init__(out self, step: Int):
+    def __init__(out self, step: UInt64):
         self.now = 0
         self.step = step
 
@@ -92,7 +51,7 @@ def test_runtime_profiler_owns_configured_instrument() raises:
 
     var report = prof.report()
     assert_equal(report.total.value, 15)
-    assert_equal(report.zones[0].inclusive.value, 5)
+    assert_equal(report.stats[0].inclusive.value, 5)
 
 
 def test_runtime_profilers_of_same_type_are_independent() raises:
@@ -123,16 +82,16 @@ def test_single_zone_inclusive_equals_exclusive() raises:
 
     var rep = Prof.report()
     assert_equal(rep.total.value, 3)
-    assert_equal(len(rep.zones), 1)
-    assert_true(rep.zones[0].name == "only")
-    assert_equal(rep.zones[0].count, 1)
-    assert_equal(rep.zones[0].inclusive.value, 1)  # 2 - 1
-    assert_equal(rep.zones[0].exclusive.value, 1)  # no children
-    assert_equal(rep.zones[0].inclusive_min.value, 1)
-    assert_true(rep.zones[0].loc.line() > 0)
-    assert_true(rep.zones[0].loc.column() > 0)
+    assert_equal(len(rep.stats), 1)
+    assert_true(rep.stats[0].name == "only")
+    assert_equal(rep.stats[0].count, 1)
+    assert_equal(rep.stats[0].inclusive.value, 1)  # 2 - 1
+    assert_equal(rep.stats[0].exclusive.value, 1)  # no children
+    assert_equal(rep.stats[0].inclusive_min.value, 1)
+    assert_true(rep.stats[0].loc.line() > 0)
+    assert_true(rep.stats[0].loc.column() > 0)
     assert_true(
-        String(rep.zones[0].loc.file_name()).endswith(
+        String(rep.stats[0].loc.file_name()).endswith(
             "tests/profile/test_profiler.mojo"
         )
     )
@@ -147,36 +106,11 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Inclusive/Iter") != -1)
     assert_true(table.find("Inclusive (%)") != -1)
     assert_true(table.find("Exclusive (%)") != -1)
-    assert_true(table.find("Program total: 3ns") != -1)
+    assert_true(table.find("Program total: 3 ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
     assert_true(table.find("only") != -1)
-    assert_true(table.find("1ns") != -1)
-    assert_true(table.find("33.3%") != -1)
-
-
-def test_custom_metric_uses_plain_table_values() raises:
-    comptime Prof = GlobalProfiler[OpaqueTicker, Tag="test.opaque-metric"]
-
-    Prof.start()
-    with Prof.zone["opaque"]():
-        pass
-    Prof.end()
-
-    # Force color on rather than leaving it to `ColorMode.AUTO`, which asks
-    # `stdout.isatty()` and so renders differently under a terminal than under
-    # a pipe. With the bold header off, any escape left in the output could
-    # only have come from the percent cell -- which is what this pins down: a
-    # metric with no scalar shows a plain `N/A`, never a colored one.
-    var tables = Prof.report().tables()
-    tables[0].style.color = ColorMode.ALWAYS
-    tables[0].style.header_bold = False
-
-    var table = String(tables[0])
-    assert_true(table.find("Program total: 3 ticks") != -1)
-    assert_true(table.find("opaque") != -1)
-    assert_true(table.find("1 ticks") != -1)
-    assert_true(table.find("N/A") != -1)
-    assert_true(table.find("\033[") == -1)
+    assert_true(table.find("Inclusive (ns)") != -1)
+    assert_true(table.find("33,3%") != -1)
 
 
 def test_nested_exclusive_subtracts_child() raises:
@@ -190,13 +124,13 @@ def test_nested_exclusive_subtracts_child() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 2)
+    assert_equal(len(rep.stats), 2)
 
     # Outer spans three ticks and inner spans one.
-    var outer_incl = 0
-    var outer_excl = 0
-    var inner_incl = 0
-    for ref z in rep.zones:
+    var outer_incl = UInt64(0)
+    var outer_excl = UInt64(0)
+    var inner_incl = UInt64(0)
+    for ref z in rep.stats:
         if z.name == "outer":
             outer_incl = z.inclusive.value
             outer_excl = z.exclusive.value
@@ -223,9 +157,9 @@ def test_multiple_children_subtracted() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 3)
+    assert_equal(len(rep.stats), 3)
     # a spans five ticks and both children (one tick each) are subtracted.
-    for ref z in rep.zones:
+    for ref z in rep.stats:
         if z.name == "a":
             assert_equal(z.inclusive.value, 5)
             assert_equal(z.exclusive.value, 3)  # 5 - 1 - 1
@@ -245,12 +179,12 @@ def test_reentry_aggregates() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 1)
-    assert_equal(rep.zones[0].count, 3)
-    assert_equal(rep.zones[0].inclusive.value, 3)  # 1 tick each
+    assert_equal(len(rep.stats), 1)
+    assert_equal(rep.stats[0].count, 3)
+    assert_equal(rep.stats[0].inclusive.value, 3)  # 1 tick each
     var table = String(rep)
-    assert_true(table.find("1ns") != -1)
-    assert_true(table.find("42.9%") != -1)
+    assert_true(table.find("Inclusive/Iter (ns)") != -1)
+    assert_true(table.find("42,9%") != -1)
 
 
 def test_deep_lifo_nesting() raises:
@@ -266,10 +200,10 @@ def test_deep_lifo_nesting() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 3)
+    assert_equal(len(rep.stats), 3)
     # a spans 1..6 (=5), b spans 2..5 (=3), c spans 3..4 (=1); each zone's
     # exclusive time is inclusive minus its single child's inclusive.
-    for ref z in rep.zones:
+    for ref z in rep.stats:
         if z.name == "a":
             assert_equal(z.inclusive.value, 5)
             assert_equal(z.exclusive.value, 2)  # 5 - 3
@@ -300,15 +234,15 @@ def test_recursive_zone_counts_outermost_span_once() raises:
     RecProf.end()
 
     var rep = RecProf.report()
-    assert_equal(len(rep.zones), 1)
-    assert_true(rep.zones[0].name == "rec")
-    assert_equal(rep.zones[0].count, 3)
+    assert_equal(len(rep.stats), 1)
+    assert_true(rep.stats[0].name == "rec")
+    assert_equal(rep.stats[0].count, 3)
     # Inclusive spans only the outermost entry (1..6), not the sum of the
     # nested spans; self-nesting must not double count.
-    assert_equal(rep.zones[0].inclusive.value, 5)
+    assert_equal(rep.stats[0].inclusive.value, 5)
     # Inner deltas are added to the anchor and subtracted from it again as
     # their own parent, so exclusive also equals the outermost span.
-    assert_equal(rep.zones[0].exclusive.value, 5)
+    assert_equal(rep.stats[0].exclusive.value, 5)
 
 
 def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
@@ -323,10 +257,10 @@ def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 2)
-    var inclusive_sum = 0
-    var exclusive_sum = 0
-    for ref stat in rep.zones:
+    assert_equal(len(rep.stats), 2)
+    var inclusive_sum = UInt64(0)
+    var exclusive_sum = UInt64(0)
+    for ref stat in rep.stats:
         assert_true(stat.name == "work")
         assert_equal(stat.count, 1)
         inclusive_sum += stat.inclusive.value
@@ -353,11 +287,11 @@ def test_manual_index_shares_anchor_across_call_sites() raises:
     ManualProf.end()
 
     var rep = ManualProf.report()
-    assert_equal(len(rep.zones), 1)
-    assert_true(rep.zones[0].name == "pinned")
-    assert_equal(rep.zones[0].count, 2)
-    assert_equal(rep.zones[0].inclusive.value, 2)
-    assert_equal(rep.zones[0].exclusive.value, 2)
+    assert_equal(len(rep.stats), 1)
+    assert_true(rep.stats[0].name == "pinned")
+    assert_equal(rep.stats[0].count, 2)
+    assert_equal(rep.stats[0].inclusive.value, 2)
+    assert_equal(rep.stats[0].exclusive.value, 2)
 
 
 def test_manual_and_automatic_anchors_coexist() raises:
@@ -374,8 +308,8 @@ def test_manual_and_automatic_anchors_coexist() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 2)
-    for ref stat in rep.zones:
+    assert_equal(len(rep.stats), 2)
+    for ref stat in rep.stats:
         assert_true(stat.name == "auto" or stat.name == "manual")
         assert_equal(stat.count, 1)
         assert_equal(stat.inclusive.value, 1)
@@ -432,7 +366,7 @@ def test_reset_starts_a_fresh_session_and_preserves_sites() raises:
     ResetProf.start()
     _record_reset_zone()
     ResetProf.end()
-    assert_equal(ResetProf.report().zones[0].count, 1)
+    assert_equal(ResetProf.report().stats[0].count, 1)
 
     ResetProf.reset()
     with assert_raises(contains="before end"):
@@ -443,9 +377,9 @@ def test_reset_starts_a_fresh_session_and_preserves_sites() raises:
     ResetProf.end()
 
     var report = ResetProf.report()
-    assert_equal(len(report.zones), 1)
-    assert_true(report.zones[0].name == "reused")
-    assert_equal(report.zones[0].count, 1)
+    assert_equal(len(report.stats), 1)
+    assert_true(report.stats[0].name == "reused")
+    assert_equal(report.stats[0].count, 1)
 
 
 def test_reset_rejects_an_active_session() raises:
@@ -473,10 +407,10 @@ def test_report_is_repeatable() raises:
     # report() only derives statistics; it must not consume or mutate them.
     var first = Prof.report()
     var second = Prof.report()
-    assert_equal(len(first.zones), len(second.zones))
-    assert_equal(first.zones[0].count, second.zones[0].count)
+    assert_equal(len(first.stats), len(second.stats))
+    assert_equal(first.stats[0].count, second.stats[0].count)
     assert_equal(
-        first.zones[0].inclusive.value, second.zones[0].inclusive.value
+        first.stats[0].inclusive.value, second.stats[0].inclusive.value
     )
 
 
@@ -489,10 +423,10 @@ def test_with_statement_closes_zone() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 1)
-    assert_true(rep.zones[0].name == "scoped")
-    assert_equal(rep.zones[0].count, 1)
-    assert_equal(rep.zones[0].inclusive.value, 1)
+    assert_equal(len(rep.stats), 1)
+    assert_true(rep.stats[0].name == "scoped")
+    assert_equal(rep.stats[0].count, 1)
+    assert_equal(rep.stats[0].inclusive.value, 1)
 
 
 def test_with_statement_nests_with_linear_zones() raises:
@@ -505,8 +439,8 @@ def test_with_statement_nests_with_linear_zones() raises:
     Prof.end()
 
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 2)
-    for ref z in rep.zones:
+    assert_equal(len(rep.stats), 2)
+    for ref z in rep.stats:
         if z.name == "outer":
             assert_equal(z.inclusive.value, 3)
             assert_equal(z.exclusive.value, 2)  # 3 - 1 child
@@ -528,9 +462,80 @@ def test_with_statement_closes_zone_on_raise() raises:
 
     # The zone must be closed, so report() succeeds and counted the hit.
     var rep = Prof.report()
-    assert_equal(len(rep.zones), 1)
-    assert_equal(rep.zones[0].count, 1)
-    assert_equal(rep.zones[0].inclusive.value, 1)
+    assert_equal(len(rep.stats), 1)
+    assert_equal(rep.stats[0].count, 1)
+    assert_equal(rep.stats[0].inclusive.value, 1)
+
+
+def test_byte_tracking_aggregates_reentered_zones() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-reentry"]
+
+    Prof.start()
+    for bytes in [UInt64(4), UInt64(6)]:
+        with Prof.zone["work"](bytes=bytes):
+            pass
+    Prof.end()
+
+    var rep = Prof.report()
+    assert_equal(len(rep.stats), 1)
+    assert_true(rep.stats[0].processed_data)
+    assert_equal(rep.stats[0].processed_data.value().value, 10)
+    assert_equal(rep.stats[0].inclusive.value, 2)
+
+    var table = String(rep)
+    assert_true(table.find("Throughput") != -1)
+    assert_true(table.find("5") != -1)
+
+
+def test_byte_tracking_accumulates_bytes_discovered_in_scope() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-incremental"]
+
+    Prof.start()
+    with Prof.zone["work"](bytes=UInt64(3)) as zone:
+        zone.add_bytes(4)
+        zone.add_bytes(5)
+    Prof.end()
+
+    var data = Prof.report().stats[0].processed_data
+    assert_true(data)
+    assert_equal(data.value().value, 12)
+
+
+def test_directly_held_zone_accumulates_bytes() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-direct"]
+
+    Prof.start()
+    var zone = Prof.zone["work"](bytes=UInt64(3))
+    zone.add_bytes(4)
+    zone^.close()
+    Prof.end()
+
+    var data = Prof.report().stats[0].processed_data
+    assert_true(data)
+    assert_equal(data.value().value, 7)
+
+
+comptime ByteRecProf = GlobalProfiler[Ticker, Tag="test.bytes-recursion"]
+
+
+def _record_recursive_bytes(depth: Int, bytes: UInt64):
+    var zone = ByteRecProf.zone["recursive"](bytes=bytes)
+    if depth > 0:
+        _record_recursive_bytes(depth - 1, bytes // 2)
+    zone^.close()
+
+
+def test_recursive_byte_tracking_sums_every_invocation() raises:
+    ByteRecProf.start()
+    _record_recursive_bytes(1, UInt64(100))
+    ByteRecProf.end()
+
+    var rep = ByteRecProf.report()
+    assert_equal(len(rep.stats), 1)
+    assert_equal(rep.stats[0].count, 2)
+    assert_equal(rep.stats[0].inclusive.value, 3)
+    assert_true(rep.stats[0].processed_data)
+    assert_equal(rep.stats[0].processed_data.value().value, 150)
 
 
 def main() raises:

@@ -1,7 +1,13 @@
 from std.sys import stdout
 from std.time import perf_counter_ns
 
-from .measure import Instrument, Metric, MetricField
+from .measure import Instrument
+from .measure.instrument import (
+    MetricComponent,
+    _MetricInner,
+    MType,
+    _metric_any_less,
+)
 from .report.table import Align, Cell, Column, Table, TableStyle
 
 # ===------------------------------------------------------------------------===
@@ -9,7 +15,7 @@ from .report.table import Align, Cell, Column, Table, TableStyle
 # ===------------------------------------------------------------------------===
 
 
-struct RepetitionResults[M: Metric](Copyable):
+struct RepetitionResults[M: _MetricInner](Copyable):
     """Statistics accumulated across completed repetitions."""
 
     var test_count: Int
@@ -25,22 +31,19 @@ struct RepetitionResults[M: Metric](Copyable):
 
     @staticmethod
     def _from_batch(var total: Self.M, repetitions: Int) -> Self:
-        var sample = total / repetitions
+        var sample = total.div(UInt64(repetitions))
         var results = Self(sample)
         results.test_count = repetitions
         results.total = total^
         return results^
 
-    def average(self) -> Self.M:
-        return self.total / self.test_count
-
     def _observe(
         mut self, var total: Self.M, repetitions: Int = 1
     ) raises -> Bool:
-        var sample = total / repetitions
-        var improved = _has_improvement(self.minimum, sample)
+        var sample = total.div(UInt64(repetitions))
+        var improved = _metric_any_less(self.minimum, sample)
         self.test_count += repetitions
-        self.total = self.total + total
+        self.total = self.total.add(total)
         self.minimum = self.minimum.min(sample)
         self.maximum = self.maximum.max(sample)
         return improved
@@ -65,12 +68,12 @@ struct _LiveReport:
         if self._is_terminal:
             self._redraw(self._status_line())
 
-    def update[M: Metric](mut self, results: RepetitionResults[M]) raises:
+    def update[M: _MetricInner](mut self, results: RepetitionResults[M]) raises:
         if not self._is_terminal:
             return
         self._redraw(self._live_text(results))
 
-    def tick[M: Metric](mut self, results: RepetitionResults[M]) raises:
+    def tick[M: _MetricInner](mut self, results: RepetitionResults[M]) raises:
         if not self._is_terminal:
             return
 
@@ -85,7 +88,7 @@ struct _LiveReport:
             _clear_terminal(self._rendered_lines)
             self._rendered_lines = 0
 
-    def finish[M: Metric](mut self, results: RepetitionResults[M]) raises:
+    def finish[M: _MetricInner](mut self, results: RepetitionResults[M]) raises:
         var table = _repetition_table(results)
         if self._is_terminal:
             self._redraw(String(table))
@@ -99,7 +102,7 @@ struct _LiveReport:
         self._rendered_lines = len(text.splitlines())
 
     def _live_text[
-        M: Metric
+        M: _MetricInner
     ](mut self, results: RepetitionResults[M]) raises -> String:
         var table = _repetition_table(results)
         table.title = self._status()
@@ -220,9 +223,7 @@ struct RepetitionTester[I: Instrument, //]:
         except error:
             raise Error(String(t"error while repetition testing: {error}"))
         var end = self._instrument.measure()
-        var delta = end - start
-        _require_comparable(delta)
-        return delta^
+        return end.sub(start)
 
     def _next_batch_reps(self, completed_repetitions: Int) -> Int:
         if self._max_reps:
@@ -238,20 +239,17 @@ struct RepetitionTester[I: Instrument, //]:
         return False
 
 
-def _repetition_table[M: Metric](results: RepetitionResults[M]) raises -> Table:
-    var minimum = results.minimum.fields()
-    var maximum = results.maximum.fields()
-    var average = results.average().fields()
-    _check_shape(minimum, maximum)
-    _check_shape(minimum, average)
+def _repetition_table[
+    M: _MetricInner
+](results: RepetitionResults[M]) raises -> Table:
+    var minimum = results.minimum.components()
+    var maximum = results.maximum.components()
+    var total = results.total.components()
 
     var columns = List[Column](capacity=len(minimum) + 1)
     columns.append(Column("Statistic"))
     for ref field in minimum:
-        if field.name:
-            columns.append(Column(field.name.copy(), align=Align.RIGHT))
-        else:
-            columns.append(Column("Value", align=Align.RIGHT))
+        columns.append(Column(_component_header(field), align=Align.Right))
 
     var table = Table(
         _title(results.test_count),
@@ -261,19 +259,21 @@ def _repetition_table[M: Metric](results: RepetitionResults[M]) raises -> Table:
     var minimum_row = List[Cell](capacity=len(minimum) + 1)
     minimum_row.append(Cell("Minimum"))
     for ref field in minimum:
-        minimum_row.append(Cell(field.value.copy()))
+        minimum_row.append(Cell(_component_integer(field)))
     table.add_row(minimum_row^)
 
     var maximum_row = List[Cell](capacity=len(maximum) + 1)
     maximum_row.append(Cell("Maximum"))
     for ref field in maximum:
-        maximum_row.append(Cell(field.value.copy()))
+        maximum_row.append(Cell(_component_integer(field)))
     table.add_row(maximum_row^)
 
-    var average_row = List[Cell](capacity=len(average) + 1)
+    var average_row = List[Cell](capacity=len(total) + 1)
     average_row.append(Cell("Average"))
-    for ref field in average:
-        average_row.append(Cell(field.value.copy()))
+    for ref field in total:
+        average_row.append(
+            Cell(String(field.canonical_value() / Float64(results.test_count)))
+        )
     table.add_row(average_row^)
     return table^
 
@@ -283,36 +283,19 @@ def _title(repetitions: Int) -> String:
     return String(t"Repetition results — {repetitions} {noun}")
 
 
-def _check_shape(lhs: List[MetricField], rhs: List[MetricField]) raises:
-    if len(lhs) != len(rhs):
-        raise Error("metric field count changed between repetition statistics")
-    for i in range(len(lhs)):
-        if lhs[i].name != rhs[i].name:
-            raise Error("metric field order changed between repetitions")
+def _component_header(field: MetricComponent) -> String:
+    var name = field.name.copy() if field.name else String("Value")
+    var unit: String
+    if field.kind == MType.Time:
+        unit = "ns"
+    elif field.kind == MType.DataSize:
+        unit = "B"
+    else:
+        unit = field.count_kind.copy()
+    if unit:
+        return name + " (" + unit + ")"
+    return name^
 
 
-def _require_comparable[M: Metric](metric: M) raises:
-    var fields = metric.fields()
-    for ref field in fields:
-        if not field.scalar:
-            var name = field.name if field.name else String("<unnamed>")
-            raise Error(
-                "repetition testing requires a scalar value for metric field ",
-                name,
-            )
-
-
-def _has_improvement[M: Metric](best: M, candidate: M) raises -> Bool:
-    var best_fields = best.fields()
-    var candidate_fields = candidate.fields()
-    _check_shape(best_fields, candidate_fields)
-
-    var improved = False
-    for i in range(len(best_fields)):
-        ref best_field = best_fields[i]
-        ref candidate_field = candidate_fields[i]
-        if not best_field.scalar or not candidate_field.scalar:
-            raise Error("repetition testing requires scalar metric fields")
-        if candidate_field.scalar.value() < best_field.scalar.value():
-            improved = True
-    return improved
+def _component_integer(field: MetricComponent) -> String:
+    return String(field.value * field.storage_scale)

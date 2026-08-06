@@ -15,7 +15,7 @@ from professor.report.table import (
 def _plain(var columns: List[Column]) -> Table:
     """Builds a table with colors disabled, so output is deterministic."""
     var table = Table(String(), columns^, TableStyle())
-    table.style.color = ColorMode.NEVER
+    table.style.color = ColorMode.Never
     return table^
 
 
@@ -50,9 +50,9 @@ def test_hidden_header_does_not_reserve_width() raises:
 def test_alignment_places_padding() raises:
     var table = _plain(
         [
-            Column("L", align=Align.LEFT, min_width=5),
-            Column("R", align=Align.RIGHT, min_width=5),
-            Column("C", align=Align.CENTER, min_width=5),
+            Column("L", align=Align.Left, min_width=5),
+            Column("R", align=Align.Right, min_width=5),
+            Column("C", align=Align.Center, min_width=5),
             Column("end"),
         ]
     )
@@ -67,18 +67,18 @@ def test_alignment_places_padding() raises:
 
 def test_cell_alignment_overrides_the_column() raises:
     var table = _plain(
-        [Column("H", align=Align.RIGHT, min_width=4), Column("")]
+        [Column("H", align=Align.Right, min_width=4), Column("")]
     )
     table.style.show_header = False
     table.style.header_rule = False
-    var cells = [Cell("x", align=Align.LEFT), Cell("|")]
+    var cells = [Cell("x", align=Align.Left), Cell("|")]
     table.add_row(cells^)
     assert_equal(String(table), "x     |\n")
 
 
 def test_header_alignment_can_differ_from_the_column() raises:
     var table = _plain(
-        [Column("H", align=Align.RIGHT, header_align=Align.LEFT, min_width=4)]
+        [Column("H", align=Align.Right, header_align=Align.Left, min_width=4)]
     )
     table.style.header_rule = False
     table.add_text_row(["x"])
@@ -146,7 +146,7 @@ def test_gap_is_configurable() raises:
 
 
 def test_header_rule_follows_the_header() raises:
-    var table = _plain([Column("Zone"), Column("N", align=Align.RIGHT)])
+    var table = _plain([Column("Zone"), Column("N", align=Align.Right)])
     table.add_text_row(["parse", "10"])
     assert_equal(String(table), "Zone    N\n-----  --\nparse  10\n")
 
@@ -185,19 +185,19 @@ def test_last_column_has_no_trailing_padding() raises:
 
 def test_color_never_strips_escapes() raises:
     var table = _plain([Column("A")])
-    var cells = [Cell("x", color=Color.RED, bold=True)]
+    var cells = [Cell("x", color=Color.Red, bold=True)]
     table.add_row(cells^)
     assert_equal(String(table), "A\n-\nx\n")
 
 
 def test_color_always_wraps_only_the_text() raises:
     var table = Table(
-        String(), [Column("A", align=Align.RIGHT, min_width=3)], TableStyle()
+        String(), [Column("A", align=Align.Right, min_width=3)], TableStyle()
     )
-    table.style.color = ColorMode.ALWAYS
+    table.style.color = ColorMode.Always
     table.style.show_header = False
     table.style.header_rule = False
-    var cells = [Cell("x", color=Color.RED)]
+    var cells = [Cell("x", color=Color.Red)]
     table.add_row(cells^)
     # Padding stays outside the escape sequence.
     assert_equal(String(table), "  \033[31mx\033[0m\n")
@@ -205,15 +205,15 @@ def test_color_always_wraps_only_the_text() raises:
 
 def test_color_does_not_affect_column_width() raises:
     var table = Table(String(), [Column("A")], TableStyle())
-    table.style.color = ColorMode.ALWAYS
-    var cells = [Cell("x", color=Color.GREEN, bold=True)]
+    table.style.color = ColorMode.Always
+    var cells = [Cell("x", color=Color.Green, bold=True)]
     table.add_row(cells^)
     assert_equal(table.column_widths()[0], 1)
 
 
 def test_default_color_emits_no_escape() raises:
     var table = Table(String(), [Column("A")], TableStyle())
-    table.style.color = ColorMode.ALWAYS
+    table.style.color = ColorMode.Always
     table.style.header_bold = False
     table.add_text_row(["x"])
     assert_true(String(table).find("\033[") == -1)
@@ -221,15 +221,15 @@ def test_default_color_emits_no_escape() raises:
 
 def test_writing_default_restores_the_terminal_color() raises:
     # The obvious way to close a color outside a table has to actually work.
-    assert_equal(String(Color.RED), "\033[31m")
-    assert_equal(String(Color.DEFAULT), "\033[0m")
+    assert_equal(String(Color.Red), "\033[31m")
+    assert_equal(String(Color.Default), "\033[0m")
 
 
 def test_bold_without_a_color_is_not_reset_before_the_text() raises:
     # DEFAULT is ANSI's reset, so emitting it after selecting bold would
     # cancel the bold.
     var table = Table(String(), [Column("A")], TableStyle())
-    table.style.color = ColorMode.ALWAYS
+    table.style.color = ColorMode.Always
     table.style.show_header = False
     table.style.header_rule = False
     var cells = [Cell("x", bold=True)]
@@ -239,14 +239,14 @@ def test_bold_without_a_color_is_not_reset_before_the_text() raises:
 
 def test_header_is_bold_by_default() raises:
     var table = Table(String(), [Column("A")], TableStyle())
-    table.style.color = ColorMode.ALWAYS
+    table.style.color = ColorMode.Always
     table.style.header_rule = False
     assert_equal(String(table), "\033[1mA\033[0m\n")
 
 
 def test_header_bold_can_be_turned_off() raises:
     var table = Table(String(), [Column("A")], TableStyle())
-    table.style.color = ColorMode.ALWAYS
+    table.style.color = ColorMode.Always
     table.style.header_rule = False
     table.style.header_bold = False
     assert_equal(String(table), "A\n")
