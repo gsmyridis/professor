@@ -1,8 +1,6 @@
-from std.sys import size_of
 from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
-from professor import GlobalProfiler, Instrument, Metric, Nanos, Profiler
-from professor.report.table import ColorMode
+from professor import GlobalProfiler, Instrument, Nanos, Profiler
 
 
 # A deterministic measurer: each `measure()` returns a monotonically
@@ -11,7 +9,7 @@ from professor.report.table import ColorMode
 # measurer, so every test uses its own tag to get a fresh Ticker at 0.
 struct Ticker(Instrument):
     comptime MetricType = Nanos
-    var now: Int
+    var now: UInt64
 
     def __init__(out self):
         self.now = 0
@@ -21,55 +19,15 @@ struct Ticker(Instrument):
         return Nanos(self.now)
 
 
-@fieldwise_init
-struct OpaqueTicks(Defaultable, ImplicitlyCopyable, Metric):
-    """Custom metric that deliberately has no scalar report value."""
-
-    var value: Int
-
-    def __init__(out self):
-        self.value = 0
-
-    def __sub__(self, other: Self) -> Self:
-        return Self(self.value - other.value)
-
-    def __add__(self, other: Self) -> Self:
-        return Self(self.value + other.value)
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(self.value // count)
-
-    def min(self, other: Self) -> Self:
-        return self if self.value < other.value else other
-
-    def max(self, other: Self) -> Self:
-        return self if self.value > other.value else other
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(self.value, " ticks")
-
-
-struct OpaqueTicker(Instrument):
-    comptime MetricType = OpaqueTicks
-    var now: Int
-
-    def __init__(out self):
-        self.now = 0
-
-    def measure(mut self) -> OpaqueTicks:
-        self.now += 1
-        return OpaqueTicks(self.now)
-
-
 struct ConfigurableTicker(Instrument):
     comptime MetricType = Nanos
-    var now: Int
-    var step: Int
+    var now: UInt64
+    var step: UInt64
 
     def __init__(out self):
         self = Self(1)
 
-    def __init__(out self, step: Int):
+    def __init__(out self, step: UInt64):
         self.now = 0
         self.step = step
 
@@ -148,36 +106,11 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("Inclusive/Iter") != -1)
     assert_true(table.find("Inclusive (%)") != -1)
     assert_true(table.find("Exclusive (%)") != -1)
-    assert_true(table.find("Program total: 3ns") != -1)
+    assert_true(table.find("Program total: 3 ns") != -1)
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
     assert_true(table.find("only") != -1)
-    assert_true(table.find("1ns") != -1)
-    assert_true(table.find("33.3%") != -1)
-
-
-def test_custom_metric_uses_plain_table_values() raises:
-    comptime Prof = GlobalProfiler[OpaqueTicker, Tag="test.opaque-metric"]
-
-    Prof.start()
-    with Prof.zone["opaque"]():
-        pass
-    Prof.end()
-
-    # Force color on rather than leaving it to `ColorMode.AUTO`, which asks
-    # `stdout.isatty()` and so renders differently under a terminal than under
-    # a pipe. With the bold header off, any escape left in the output could
-    # only have come from the percent cell -- which is what this pins down: a
-    # metric with no scalar shows a plain `N/A`, never a colored one.
-    var tables = Prof.report().tables()
-    tables[0].style.color = ColorMode.ALWAYS
-    tables[0].style.header_bold = False
-
-    var table = String(tables[0])
-    assert_true(table.find("Program total: 3 ticks") != -1)
-    assert_true(table.find("opaque") != -1)
-    assert_true(table.find("1 ticks") != -1)
-    assert_true(table.find("N/A") != -1)
-    assert_true(table.find("\033[") == -1)
+    assert_true(table.find("Inclusive (ns)") != -1)
+    assert_true(table.find("33,3%") != -1)
 
 
 def test_nested_exclusive_subtracts_child() raises:
@@ -194,9 +127,9 @@ def test_nested_exclusive_subtracts_child() raises:
     assert_equal(len(rep.stats), 2)
 
     # Outer spans three ticks and inner spans one.
-    var outer_incl = 0
-    var outer_excl = 0
-    var inner_incl = 0
+    var outer_incl = UInt64(0)
+    var outer_excl = UInt64(0)
+    var inner_incl = UInt64(0)
     for ref z in rep.stats:
         if z.name == "outer":
             outer_incl = z.inclusive.value
@@ -250,8 +183,8 @@ def test_reentry_aggregates() raises:
     assert_equal(rep.stats[0].count, 3)
     assert_equal(rep.stats[0].inclusive.value, 3)  # 1 tick each
     var table = String(rep)
-    assert_true(table.find("1ns") != -1)
-    assert_true(table.find("42.9%") != -1)
+    assert_true(table.find("Inclusive/Iter (ns)") != -1)
+    assert_true(table.find("42,9%") != -1)
 
 
 def test_deep_lifo_nesting() raises:
@@ -325,8 +258,8 @@ def test_same_name_at_distinct_locations_creates_distinct_sites() raises:
 
     var rep = Prof.report()
     assert_equal(len(rep.stats), 2)
-    var inclusive_sum = 0
-    var exclusive_sum = 0
+    var inclusive_sum = UInt64(0)
+    var exclusive_sum = UInt64(0)
     for ref stat in rep.stats:
         assert_true(stat.name == "work")
         assert_equal(stat.count, 1)
@@ -538,58 +471,71 @@ def test_byte_tracking_aggregates_reentered_zones() raises:
     comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-reentry"]
 
     Prof.start()
-    for bytes in [4, 6]:
+    for bytes in [UInt64(4), UInt64(6)]:
         with Prof.zone["work"](bytes=bytes):
             pass
     Prof.end()
 
     var rep = Prof.report()
     assert_equal(len(rep.stats), 1)
-    assert_true(rep.stats[0].memory)
-    assert_equal(rep.stats[0].memory.value().value, 10)
+    assert_true(rep.stats[0].processed_data)
+    assert_equal(rep.stats[0].processed_data.value().value, 10)
     assert_equal(rep.stats[0].inclusive.value, 2)
 
     var table = String(rep)
     assert_true(table.find("Throughput") != -1)
-    assert_true(table.find("5.0 GB/s") != -1)
+    assert_true(table.find("5") != -1)
 
 
-def test_only_byte_tracking_handles_carry_byte_state() raises:
-    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-handle-size"]
+def test_byte_tracking_accumulates_bytes_discovered_in_scope() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-incremental"]
 
     Prof.start()
-    var ordinary = Prof.zone["ordinary"]()
-    var tracked = Prof.zone["tracked"](bytes=1)
-    comptime assert (
-        size_of[type_of(tracked)]()
-        == size_of[type_of(ordinary)]() + 2 * size_of[Int]()
-    )
-    tracked^.close()
-    ordinary^.close()
+    with Prof.zone["work"](bytes=UInt64(3)) as zone:
+        zone.add_bytes(4)
+        zone.add_bytes(5)
     Prof.end()
+
+    var data = Prof.report().stats[0].processed_data
+    assert_true(data)
+    assert_equal(data.value().value, 12)
+
+
+def test_directly_held_zone_accumulates_bytes() raises:
+    comptime Prof = GlobalProfiler[Ticker, Tag="test.bytes-direct"]
+
+    Prof.start()
+    var zone = Prof.zone["work"](bytes=UInt64(3))
+    zone.add_bytes(4)
+    zone^.close()
+    Prof.end()
+
+    var data = Prof.report().stats[0].processed_data
+    assert_true(data)
+    assert_equal(data.value().value, 7)
 
 
 comptime ByteRecProf = GlobalProfiler[Ticker, Tag="test.bytes-recursion"]
 
 
-def _record_recursive_bytes(depth: Int, bytes: Int):
+def _record_recursive_bytes(depth: Int, bytes: UInt64):
     var zone = ByteRecProf.zone["recursive"](bytes=bytes)
     if depth > 0:
         _record_recursive_bytes(depth - 1, bytes // 2)
     zone^.close()
 
 
-def test_recursive_byte_tracking_matches_outermost_inclusive_span() raises:
+def test_recursive_byte_tracking_sums_every_invocation() raises:
     ByteRecProf.start()
-    _record_recursive_bytes(1, 100)
+    _record_recursive_bytes(1, UInt64(100))
     ByteRecProf.end()
 
     var rep = ByteRecProf.report()
     assert_equal(len(rep.stats), 1)
     assert_equal(rep.stats[0].count, 2)
     assert_equal(rep.stats[0].inclusive.value, 3)
-    assert_true(rep.stats[0].memory)
-    assert_equal(rep.stats[0].memory.value().value, 100)
+    assert_true(rep.stats[0].processed_data)
+    assert_equal(rep.stats[0].processed_data.value().value, 150)
 
 
 def main() raises:

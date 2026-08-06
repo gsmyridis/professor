@@ -1,19 +1,17 @@
 from .instrument import (
     Instrument,
     Metric,
-    MetricDimension,
-    MetricField,
-    MetricUnit,
 )
 from .quantity import (
+    Bytes,
     Count,
     CountUnit,
     Cycles,
-    Memory,
-    MemoryUnit,
+    DataSize,
+    DataSizeUnit,
     Nanos,
+    Ticks,
     Time,
     TimeUnit,
-    Throughput,
 )
-from .default import WallClock, InvariantTSC
+from .default import WallClock, TimestampCounter

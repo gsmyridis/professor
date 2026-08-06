@@ -4,8 +4,8 @@ from std.os import abort
 from std.reflection import call_location, SourceLocation
 from std.sys.intrinsics import unlikely
 
-from professor.measure import Instrument, Memory
-from professor.report import Report, ZoneStatistics
+from professor.measure import Bytes, Instrument
+from professor.report import Report, ReportFormat, ZoneStatistics
 
 from ._consts import is_profiling_enabled, UNCLAIMED_ANCHOR_LABEL
 from ._registry import _SiteKey, _hash_comp_time, _site_hash
@@ -17,8 +17,6 @@ from ._state import (
 )
 from ._zone import (
     _EnabledProfileZone,
-    _MemoryZoneData,
-    _NoMemoryZoneData,
     _ProfileZone,
 )
 
@@ -128,7 +126,11 @@ struct Profiler[
     # ===--------------------------------------------------------------------===
 
     def start(mut self) raises:
-        """Starts this profiler's measurement interval."""
+        """Starts this profiler's measurement interval.
+
+        Raises:
+            If the profiler is running, or has an open zone.
+        """
         comptime if not is_profiling_enabled():
             return
 
@@ -143,7 +145,11 @@ struct Profiler[
         st[].has_started = True
 
     def end(mut self) raises:
-        """Ends this profiler's measurement interval."""
+        """Ends this profiler's measurement interval.
+
+        Raises:
+            If the profiler is not running, or has an open zone.
+        """
         comptime if not is_profiling_enabled():
             return
 
@@ -164,7 +170,7 @@ struct Profiler[
                 )
             )
 
-        st[].total_metric = end_metric - st[].start_metric
+        st[].total_metric = end_metric.sub(st[].start_metric)
         st[].has_ended = True
 
     def reset(mut self) raises:
@@ -183,8 +189,8 @@ struct Profiler[
         if st[].has_started and not st[].has_ended:
             raise Error("reset() called before end()")
 
-        st[].start_metric = Self.I.MetricType()
-        st[].total_metric = Self.I.MetricType()
+        st[].start_metric = Self.MetricType()
+        st[].total_metric = Self.MetricType()
         st[].has_started = False
         st[].has_ended = False
         st[].current_open_idx = ROOT_ANCHOR_INDEX
@@ -215,7 +221,7 @@ struct Profiler[
     ](
         ref[origin] self,
         *,
-        bytes: Int,
+        bytes: UInt64,
     ) -> _ProfileZone[
         Self.I, Self.Capacity, origin, True
     ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
@@ -243,7 +249,7 @@ struct Profiler[
     ](
         ref[origin] self,
         *,
-        bytes: Int,
+        bytes: UInt64,
     ) -> _ProfileZone[
         Self.I, Self.Capacity, origin, True
     ]:
@@ -264,7 +270,7 @@ struct Profiler[
         Self.I, Self.Capacity, origin
     ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
         var st = self._core_state()
-        return _open_zone[False, name](st, index + 1, loc, 0)
+        return _open_zone[False, name](st, index + 1, loc, UInt64(0))
 
     @always_inline
     def _zone_at[
@@ -272,7 +278,7 @@ struct Profiler[
     ](
         ref[origin] self,
         loc: SourceLocation,
-        bytes: Int,
+        bytes: UInt64,
     ) -> _ProfileZone[
         Self.I, Self.Capacity, origin, True
     ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
@@ -299,7 +305,7 @@ struct Profiler[
     ](
         ref[origin] self,
         loc: SourceLocation,
-        bytes: Int,
+        bytes: UInt64,
     ) -> _ProfileZone[
         Self.I, Self.Capacity, origin, True
     ]:
@@ -315,10 +321,22 @@ struct Profiler[
     # Produce report
     # ===--------------------------------------------------------------------===
 
-    def report(self) raises -> Report[Self.I.MetricType]:
-        """Derives per-site statistics from the completed session."""
+    def report(
+        self, var format: ReportFormat = ReportFormat()
+    ) raises -> Report[Self.MetricType]:
+        """Derives per-site statistics from the completed session.
+
+        Args:
+            format: Formatting options for the produced report.
+
+        Returns:
+            The report.
+
+        Raises:
+            If the profiling has not been completed, or there is an open zone.
+        """
         comptime if not is_profiling_enabled():
-            return Report[Self.I.MetricType]()
+            return Report[Self.MetricType](format^)
 
         var st = self._core_state()
         var open_count = st[].current_open_depth
@@ -329,27 +347,29 @@ struct Profiler[
         if not st[].has_ended:
             raise Error("report() called before end()")
 
-        var stats = List[ZoneStatistics[Self.I.MetricType]](
+        var stats = List[ZoneStatistics[Self.MetricType]](
             capacity=len(st[].anchors)
         )
         for ref a in st[].anchors:
             if a.hit_count == 0:
                 continue
-            var memory: Optional[Memory[]] = None
-            if a.tracks_memory:
-                memory = a.memory
+            var processed_data: Optional[Bytes] = None
+            if a.tracks_data:
+                processed_data = a.processed_data
             stats.append(
-                ZoneStatistics[Self.I.MetricType](
+                ZoneStatistics[Self.MetricType](
                     a.label,
                     a.loc,
                     a.hit_count,
                     a.inclusive.copy(),
                     a.exclusive.copy(),
                     a.inclusive_min.copy(),
-                    memory,
+                    processed_data,
                 )
             )
-        return Report[Self.I.MetricType](st[].total_metric.copy(), stats^)
+        return Report[Self.MetricType](
+            st[].total_metric.copy(), stats^, format^
+        )
 
 
 # ===------------------------------------------------------------------------===
@@ -426,11 +446,13 @@ struct GlobalProfiler[
             Self._profiler()[].reset()
 
     @staticmethod
-    def report() raises -> Report[Self.MetricType]:
+    def report(
+        var format: ReportFormat = ReportFormat(),
+    ) raises -> Report[Self.MetricType]:
         comptime if is_profiling_enabled():
-            return Self._profiler()[].report()
+            return Self._profiler()[].report(format^)
         else:
-            return Report[Self.MetricType]()
+            return Report[Self.MetricType](format^)
 
     @always_inline
     @staticmethod
@@ -449,7 +471,7 @@ struct GlobalProfiler[
     @staticmethod
     def zone[
         name: StaticString, index: Int
-    ](*, bytes: Int) -> _ProfileZone[
+    ](*, bytes: UInt64) -> _ProfileZone[
         Self.I, Self.Capacity, MutUntrackedOrigin, True
     ] where (index >= ROOT_ANCHOR_INDEX and index < Self.Capacity):
         """Opens a pinned global zone that records processed bytes."""
@@ -476,7 +498,7 @@ struct GlobalProfiler[
     @staticmethod
     def zone[
         name: StaticString
-    ](*, bytes: Int) -> _ProfileZone[
+    ](*, bytes: UInt64) -> _ProfileZone[
         Self.I, Self.Capacity, MutUntrackedOrigin, True
     ]:
         """Opens a site-resolved global zone that records processed bytes."""
@@ -495,22 +517,18 @@ def _open_zone[
     C: Int,
     origin: MutOrigin,
     //,
-    tracks_memory: Bool,
+    tracks_data: Bool,
     label: StaticString,
 ](
     st: UnsafePointer[_CoreProfilerState[I, C], origin],
     idx: Int,
     loc: SourceLocation,
-    bytes: Int,
-) -> _ProfileZone[I, C, origin, tracks_memory] where (C > 0):
+    bytes: UInt64,
+) -> _ProfileZone[I, C, origin, tracks_data] where (C > 0):
     comptime assert label != UNCLAIMED_ANCHOR_LABEL, String(
         t"The semantic label of a profiling zone cannot be empty, i.e."
         t" ('{UNCLAIMED_ANCHOR_LABEL}')."
     )
-
-    comptime if tracks_memory:
-        if unlikely(bytes < 0):
-            abort("profile zone byte count cannot be negative")
 
     if unlikely(not st[].has_started or st[].has_ended):
         abort("profile zones must be opened between start() and end()")
@@ -531,7 +549,7 @@ def _open_zone[
     if unlikely(anchor.label == UNCLAIMED_ANCHOR_LABEL):
         anchor.label = label
         anchor.loc = loc
-        anchor.tracks_memory = tracks_memory
+        anchor.tracks_data = tracks_data
 
     # We place the error condition behind an unlikely hint because it is,
     # and also if it is, we do not care about the performance.
@@ -544,7 +562,7 @@ def _open_zone[
             )
         )
 
-    if unlikely(anchor.tracks_memory != tracks_memory):
+    if unlikely(anchor.tracks_data != tracks_data):
         abort(
             String(
                 t"profile anchor {idx} cannot mix ordinary and byte-tracking"
@@ -556,26 +574,15 @@ def _open_zone[
     # measured interval.
     var sample = st[].instrument.measure()
 
-    comptime MemoryDataType: RegisterPassable = (
-        _MemoryZoneData if tracks_memory else _NoMemoryZoneData
-    )
-    var memory: MemoryDataType
-    comptime if tracks_memory:
-        memory = rebind_var[MemoryDataType](
-            _MemoryZoneData(bytes, anchor.memory.value)
-        )
-    else:
-        memory = rebind_var[MemoryDataType](_NoMemoryZoneData())
-
-    return _ProfileZone[I, C, origin, tracks_memory](
-        _EnabledProfileZone[I, C, origin, tracks_memory](
+    return _ProfileZone[I, C, origin, tracks_data](
+        _EnabledProfileZone[I, C, origin, tracks_data](
             label,
             idx,
             parent,
             depth,
             prev_inclusive^,
             sample^,
-            memory^,
+            bytes,
             st,
         )
     )

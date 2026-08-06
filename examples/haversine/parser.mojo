@@ -463,7 +463,9 @@ def parse_json(input: StringSlice) raises -> Optional[Value]:
 
 def parse_json_profiled(input: StringSlice) raises -> Optional[Value]:
     """Parses JSON with `parse` and every `parse_value` call profiled."""
-    var zone = HaversineProfiler.zone["parse input"](bytes=input.byte_length())
+    var zone = HaversineProfiler.zone["parse input"](
+        bytes=UInt64(input.byte_length())
+    )
     var parser = Parser[profile=True](input)
     var result: Optional[Value]
     try:

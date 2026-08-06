@@ -19,11 +19,11 @@ struct Align(Equatable, ImplicitlyCopyable):
 
     var _value: Int
 
-    comptime LEFT = Self(0)
+    comptime Left = Self(0)
     """Align text to the left."""
-    comptime RIGHT = Self(1)
+    comptime Right = Self(1)
     """Align text to the right."""
-    comptime CENTER = Self(2)
+    comptime Center = Self(2)
     """Align text to the center."""
 
 
@@ -38,22 +38,22 @@ struct Color(Equatable, ImplicitlyCopyable, Writable):
 
     Writing a color emits the escape sequence that selects it. Selection is
     stateful -- it stays in effect until something clears it -- so writing
-    `DEFAULT` restores the terminal's own foreground color. `DEFAULT` is
+    `Default` restores the terminal's own foreground color. `Default` is
     ANSI's reset, so it clears every other attribute too, `bold` included.
     """
 
     var _code: Int
 
-    comptime DEFAULT = Self(0)
-    comptime BLACK = Self(30)
-    comptime RED = Self(31)
-    comptime GREEN = Self(32)
-    comptime YELLOW = Self(33)
-    comptime BLUE = Self(34)
-    comptime MAGENTA = Self(35)
-    comptime CYAN = Self(36)
-    comptime WHITE = Self(37)
-    comptime GRAY = Self(90)
+    comptime Default = Self(0)
+    comptime Black = Self(30)
+    comptime Red = Self(31)
+    comptime Green = Self(32)
+    comptime Yellow = Self(33)
+    comptime Blue = Self(34)
+    comptime Magenta = Self(35)
+    comptime Cyan = Self(36)
+    comptime White = Self(37)
+    comptime Gray = Self(90)
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(_ESC, self._code, "m")
@@ -70,11 +70,11 @@ struct ColorMode(Equatable, ImplicitlyCopyable):
 
     var _value: Int
 
-    comptime AUTO = Self(0)
+    comptime Auto = Self(0)
     """Colorize only when standard output is a terminal."""
 
-    comptime ALWAYS = Self(1)
-    comptime NEVER = Self(2)
+    comptime Always = Self(1)
+    comptime Never = Self(2)
 
     def enabled(self) -> Bool:
         if self._value == 1:
@@ -105,7 +105,7 @@ struct Cell(Copyable):
         out self,
         var text: String,
         *,
-        color: Color = Color.DEFAULT,
+        color: Color = Color.Default,
         bold: Bool = False,
         align: Optional[Align] = None,
     ):
@@ -137,7 +137,7 @@ struct Column(Copyable):
         out self,
         var header: String,
         *,
-        align: Align = Align.LEFT,
+        align: Align = Align.Left,
         min_width: Int = 0,
         header_align: Optional[Align] = None,
     ):
@@ -220,7 +220,7 @@ struct TableStyle(Copyable, Defaultable):
             header_rule=True,
             header_bold=True,
             rule_char="-",
-            color=ColorMode.AUTO,
+            color=ColorMode.Auto,
         )
 
 
@@ -360,7 +360,7 @@ struct Table(Copyable, Writable):
                 column.header,
                 widths[i],
                 align,
-                Color.DEFAULT,
+                Color.Default,
                 self.style.header_bold and use_color,
                 use_color,
                 pad_right=i != last,
@@ -442,23 +442,23 @@ def _write_padded(
 ):
     var slack = max(0, width - _display_width(text))
     var left = 0
-    if align == Align.RIGHT:
+    if align == Align.Right:
         left = slack
-    elif align == Align.CENTER:
+    elif align == Align.Center:
         left = slack // 2
 
     writer.write(_SPACE * left)
 
-    var styled = use_color and (bold or color != Color.DEFAULT)
+    var styled = use_color and (bold or color != Color.Default)
     if styled:
         if bold:
             writer.write(_BOLD)
-        # Writing DEFAULT here would reset the bold just selected.
-        if color != Color.DEFAULT:
+        # Writing Default here would reset the bold just selected.
+        if color != Color.Default:
             writer.write(color)
     writer.write(text)
     if styled:
-        writer.write(Color.DEFAULT)
+        writer.write(Color.Default)
 
     if pad_right:
         writer.write(_SPACE * (slack - left))

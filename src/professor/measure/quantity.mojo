@@ -1,13 +1,23 @@
 from .instrument import (
-    Metric,
-    MetricDimension,
-    MetricField,
-    MetricUnit,
+    MetricComponent,
+    MType,
+    _ScalarMetric,
 )
 
+comptime Nanos = Time[TimeUnit.Nanos]
+"""Nanoseconds."""
+
+comptime Cycles = Count["cycles"]
+"""Clock cycles."""
+
+comptime Ticks = Count["tsc_ticks"]
+"""Timestamp counter ticks."""
+
+comptime Bytes = DataSize[DataSizeUnit.Byte]
+"""Bytes."""
 
 # ===----------------------------------------------------------------------=== #
-# Units
+# Time
 # ===----------------------------------------------------------------------=== #
 
 
@@ -16,25 +26,85 @@ struct TimeUnit(Equatable, ImplicitlyCopyable, Writable):
     """A time unit and its scale in canonical nanoseconds."""
 
     var code: Int
-    var scale: Int
+    var scale: UInt64
 
-    comptime NANOS = Self(0, 1)
-    comptime MICROS = Self(1, 1_000)
-    comptime MILLIS = Self(2, 1_000_000)
-    comptime SECONDS = Self(3, 1_000_000_000)
-    comptime MINUTES = Self(4, 60_000_000_000)
+    comptime Nanos = Self(0, 1)
+    comptime Micros = Self(1, 1_000)
+    comptime Millis = Self(2, 1_000_000)
+    comptime Seconds = Self(3, 1_000_000_000)
+    comptime Minutes = Self(4, 60_000_000_000)
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.NANOS:
+        if self == Self.Nanos:
             writer.write("ns")
-        elif self == Self.MICROS:
+        elif self == Self.Micros:
             writer.write("us")
-        elif self == Self.MILLIS:
+        elif self == Self.Millis:
             writer.write("ms")
-        elif self == Self.SECONDS:
+        elif self == Self.Seconds:
             writer.write("s")
-        elif self == Self.MINUTES:
+        elif self == Self.Minutes:
             writer.write("min")
+
+
+@fieldwise_init
+struct Time[unit: TimeUnit = TimeUnit.Nanos](
+    Defaultable,
+    ImplicitlyCopyable,
+    Writable,
+    _ScalarMetric,
+):
+    """An elapsed-time quantity stored in its compile-time unit."""
+
+    var value: UInt64
+
+    def __init__(out self):
+        self.value = 0
+
+    def in_unit[target: TimeUnit](self) -> Float64:
+        comptime assert Self.unit.scale > 0, "time unit scale must be positive"
+        comptime assert (
+            target.scale > 0
+        ), "target time unit scale must be positive"
+        return (
+            Float64(self.value)
+            * Float64(Self.unit.scale)
+            / Float64(target.scale)
+        )
+
+    def sub(self, other: Self) -> Self:
+        comptime assert Self.unit.scale > 0, "time unit scale must be positive"
+        return Self(self.value - other.value)
+
+    def add(self, other: Self) -> Self:
+        return Self(self.value + other.value)
+
+    def div(self, count: UInt64) -> Self:
+        return Self(self.value // count)
+
+    def min(self, other: Self) -> Self:
+        return self if self.value < other.value else other
+
+    def max(self, other: Self) -> Self:
+        return self if self.value > other.value else other
+
+    def _component(self, var name: String) -> MetricComponent:
+        comptime assert Self.unit.scale > 0, "time unit scale must be positive"
+        return MetricComponent(
+            name^,
+            String(),
+            MType.Time,
+            self.value,
+            Self.unit.scale,
+        )
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(self.value, Self.unit)
+
+
+# ===----------------------------------------------------------------------=== #
+# Count
+# ===----------------------------------------------------------------------=== #
 
 
 @fieldwise_init
@@ -42,71 +112,142 @@ struct CountUnit(Equatable, ImplicitlyCopyable, Writable):
     """An event-count unit and its scale in individual events."""
 
     var code: Int
-    var scale: Int
+    var scale: UInt64
 
-    comptime SINGLE = Self(0, 1)
-    comptime THOUSAND = Self(1, 1_000)
-    comptime MILLION = Self(2, 1_000_000)
-    comptime BILLION = Self(3, 1_000_000_000)
+    comptime Single = Self(0, 1)
+    comptime Thousand = Self(1, 1_000)
+    comptime Million = Self(2, 1_000_000)
+    comptime Billion = Self(3, 1_000_000_000)
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.THOUSAND:
+        if self == Self.Thousand:
             writer.write("k")
-        elif self == Self.MILLION:
+        elif self == Self.Million:
             writer.write("M")
-        elif self == Self.BILLION:
+        elif self == Self.Billion:
             writer.write("G")
 
 
 @fieldwise_init
-struct MemoryUnit(Equatable, ImplicitlyCopyable, Writable):
-    """A decimal memory unit and its scale in bytes."""
+struct Count[
+    kind: StaticString,
+    unit: CountUnit = CountUnit.Single,
+](Defaultable, ImplicitlyCopyable, Writable, _ScalarMetric):
+    """A semantic event count stored in its compile-time unit."""
 
-    var code: Int
-    var scale: Int
+    var value: UInt64
 
-    comptime BYTE = Self(0, 1)
-    comptime KILOBYTE = Self(1, 1_000)
-    comptime MEGABYTE = Self(2, 1_000_000)
-    comptime GIGABYTE = Self(3, 1_000_000_000)
-    comptime TERABYTE = Self(4, 1_000_000_000_000)
+    def __init__(out self):
+        self.value = 0
+
+    def in_unit[target: CountUnit](self) -> Float64:
+        comptime assert Self.unit.scale > 0, "count unit scale must be positive"
+        comptime assert (
+            target.scale > 0
+        ), "target count unit scale must be positive"
+        return (
+            Float64(self.value)
+            * Float64(Self.unit.scale)
+            / Float64(target.scale)
+        )
+
+    def sub(self, other: Self) -> Self:
+        comptime assert Self.unit.scale > 0, "count unit scale must be positive"
+        return Self(self.value - other.value)
+
+    def add(self, other: Self) -> Self:
+        return Self(self.value + other.value)
+
+    def div(self, count: UInt64) -> Self:
+        return Self(self.value // count)
+
+    def min(self, other: Self) -> Self:
+        return self if self.value < other.value else other
+
+    def max(self, other: Self) -> Self:
+        return self if self.value > other.value else other
+
+    def _component(self, var name: String) -> MetricComponent:
+        comptime assert Self.unit.scale > 0, "count unit scale must be positive"
+        if name.byte_length() == 0:
+            name = String(Self.kind)
+        return MetricComponent(
+            name^,
+            String(Self.kind),
+            MType.Count,
+            self.value,
+            Self.unit.scale,
+        )
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.BYTE:
+        writer.write(self.value, Self.unit, Self.kind)
+
+
+# ===----------------------------------------------------------------------=== #
+# Data size
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct DataSizeUnit(Equatable, ImplicitlyCopyable, Writable):
+    """An SI data-size unit and its scale in canonical bytes."""
+
+    var code: Int
+    var scale: UInt64
+
+    comptime Byte = Self(0, 1)
+    comptime Kilobyte = Self(1, 1_000)
+    comptime Megabyte = Self(2, 1_000_000)
+    comptime Gigabyte = Self(3, 1_000_000_000)
+    comptime Terabyte = Self(4, 1_000_000_000_000)
+
+    def write_to(self, mut writer: Some[Writer]):
+        if self == Self.Byte:
             writer.write("B")
-        elif self == Self.KILOBYTE:
+        elif self == Self.Kilobyte:
             writer.write("kB")
-        elif self == Self.MEGABYTE:
+        elif self == Self.Megabyte:
             writer.write("MB")
-        elif self == Self.GIGABYTE:
+        elif self == Self.Gigabyte:
             writer.write("GB")
-        elif self == Self.TERABYTE:
+        elif self == Self.Terabyte:
             writer.write("TB")
 
 
-# ===----------------------------------------------------------------------=== #
-# Scalar quantities
-# ===----------------------------------------------------------------------=== #
-
-
 @fieldwise_init
-struct Time[unit: TimeUnit = TimeUnit.NANOS](
-    Defaultable, ImplicitlyCopyable, Metric
+struct DataSize[unit: DataSizeUnit = DataSizeUnit.Byte](
+    Defaultable, ImplicitlyCopyable, Writable, _ScalarMetric
 ):
-    """A time reading stored in its compile-time unit."""
+    """A data quantity stored in its compile-time unit."""
 
-    var value: Int
+    var value: UInt64
 
     def __init__(out self):
         self.value = 0
 
-    def __sub__(self, other: Self) -> Self:
+    def in_unit[target: DataSizeUnit](self) -> Float64:
+        comptime assert (
+            Self.unit.scale > 0
+        ), "data-size unit scale must be positive"
+        comptime assert (
+            target.scale > 0
+        ), "target data-size unit scale must be positive"
+        return (
+            Float64(self.value)
+            * Float64(Self.unit.scale)
+            / Float64(target.scale)
+        )
+
+    def sub(self, other: Self) -> Self:
+        comptime assert (
+            Self.unit.scale > 0
+        ), "data-size unit scale must be positive"
         return Self(self.value - other.value)
 
-    def __add__(self, other: Self) -> Self:
+    def add(self, other: Self) -> Self:
         return Self(self.value + other.value)
 
-    def __truediv__(self, count: Int) -> Self:
+    def div(self, count: UInt64) -> Self:
         return Self(self.value // count)
 
     def min(self, other: Self) -> Self:
@@ -115,173 +256,17 @@ struct Time[unit: TimeUnit = TimeUnit.NANOS](
     def max(self, other: Self) -> Self:
         return self if self.value > other.value else other
 
-    def in_unit[target: TimeUnit](self) -> Float64:
-        return (
-            Float64(self.value)
-            * Float64(Self.unit.scale)
-            / Float64(target.scale)
-        )
-
-    def scalar_value(self) -> Optional[Float64]:
-        return Float64(self.value)
-
-    def fields(self) -> List[MetricField]:
-        return [self.field()]
-
-    def field[name: StaticString = ""](self) -> MetricField:
-        return MetricField(
-            String(name),
-            String(self),
-            self.scalar_value(),
-            MetricUnit(
-                MetricDimension.TIME,
-                Float64(Self.unit.scale),
-                String(Self.unit),
-            ),
+    def _component(self, var name: String) -> MetricComponent:
+        comptime assert (
+            Self.unit.scale > 0
+        ), "data-size unit scale must be positive"
+        return MetricComponent(
+            name^,
+            String(),
+            MType.DataSize,
+            self.value,
+            Self.unit.scale,
         )
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.value, Self.unit)
-
-
-@fieldwise_init
-struct Count[
-    name: StaticString,
-    unit: CountUnit = CountUnit.SINGLE,
-](Defaultable, ImplicitlyCopyable, Metric):
-    """A named event count stored in its compile-time unit."""
-
-    var value: Int
-
-    def __init__(out self):
-        self.value = 0
-
-    def __sub__(self, other: Self) -> Self:
-        return Self(self.value - other.value)
-
-    def __add__(self, other: Self) -> Self:
-        return Self(self.value + other.value)
-
-    def __mul__(self, other: Self) -> Self:
-        return Self(self.value * other.value)
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(self.value // count)
-
-    def min(self, other: Self) -> Self:
-        return self if self.value < other.value else other
-
-    def max(self, other: Self) -> Self:
-        return self if self.value > other.value else other
-
-    def in_unit[target: CountUnit](self) -> Float64:
-        return (
-            Float64(self.value)
-            * Float64(Self.unit.scale)
-            / Float64(target.scale)
-        )
-
-    def scalar_value(self) -> Optional[Float64]:
-        return Float64(self.value)
-
-    def fields(self) -> List[MetricField]:
-        return [self.field()]
-
-    def field(self) -> MetricField:
-        return MetricField(
-            String(Self.name),
-            String(self),
-            self.scalar_value(),
-            MetricUnit(
-                MetricDimension.COUNT,
-                Float64(Self.unit.scale),
-                String(Self.unit),
-            ),
-        )
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(self.value, Self.unit, Self.name)
-
-
-@fieldwise_init
-struct Memory[unit: MemoryUnit = MemoryUnit.BYTE](
-    Defaultable, ImplicitlyCopyable, Metric
-):
-    """A memory quantity stored in its compile-time unit."""
-
-    var value: Int
-
-    def __init__(out self):
-        self.value = 0
-
-    def __sub__(self, other: Self) -> Self:
-        return Self(self.value - other.value)
-
-    def __add__(self, other: Self) -> Self:
-        return Self(self.value + other.value)
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(self.value // count)
-
-    def min(self, other: Self) -> Self:
-        return self if self.value < other.value else other
-
-    def max(self, other: Self) -> Self:
-        return self if self.value > other.value else other
-
-    def in_unit[target: MemoryUnit](self) -> Float64:
-        return (
-            Float64(self.value)
-            * Float64(Self.unit.scale)
-            / Float64(target.scale)
-        )
-
-    def scalar_value(self) -> Optional[Float64]:
-        return Float64(self.value)
-
-    def fields(self) -> List[MetricField]:
-        return [self.field()]
-
-    def field[name: StaticString = ""](self) -> MetricField:
-        return MetricField(
-            String(name),
-            String(self),
-            self.scalar_value(),
-            MetricUnit(
-                MetricDimension.MEMORY,
-                Float64(Self.unit.scale),
-                String(Self.unit),
-            ),
-        )
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(self.value, Self.unit)
-
-
-@fieldwise_init
-struct Throughput(Copyable, Writable):
-    """A report-time byte rate with time normalized to nanoseconds."""
-
-    var memory: Memory[]
-    var elapsed_nanos: Float64
-
-    def in_units(
-        self, memory_unit: MemoryUnit, time_unit: TimeUnit
-    ) -> Optional[Float64]:
-        if self.elapsed_nanos <= 0.0:
-            return None
-        var memory = Float64(self.memory.value) / Float64(memory_unit.scale)
-        var time = self.elapsed_nanos / Float64(time_unit.scale)
-        return memory / time
-
-    def write_to(self, mut writer: Some[Writer]):
-        var rate = self.in_units(MemoryUnit.GIGABYTE, TimeUnit.SECONDS)
-        if not rate:
-            writer.write("N/A")
-            return
-        var rounded = Float64(Int(rate.value() * 1_000.0 + 0.5)) / 1_000.0
-        writer.write(rounded, " GB/s")
-
-
-comptime Nanos = Time[TimeUnit.NANOS]
-comptime Cycles = Count["cycles"]

@@ -1,9 +1,10 @@
-from professor.measure import Memory, Metric
+from professor.measure import DataSize
+from professor.measure.instrument import _MetricInner
 from std.reflection import SourceLocation
 
 
 @fieldwise_init
-struct ZoneStatistics[S: Metric](Copyable, Movable):
+struct ZoneStatistics[S: _MetricInner](Copyable, Movable):
     """Aggregated statistics for one profiling zone."""
 
     var name: StaticString
@@ -16,13 +17,13 @@ struct ZoneStatistics[S: Metric](Copyable, Movable):
     """Hit count."""
 
     var inclusive: Self.S
-    """Inclusive time."""
+    """Inclusive metric, including child zones."""
 
     var exclusive: Self.S
-    """Exclusive time."""
+    """Exclusive metric, excluding child zones."""
 
     var inclusive_min: Self.S
-    """Minimum inclusive time."""
+    """Minimum inclusive metric across invocations."""
 
-    var memory: Optional[Memory[]]
+    var processed_data: Optional[DataSize[]]
     """Processed bytes when this site records workload size."""

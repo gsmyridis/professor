@@ -35,7 +35,6 @@ from professor import (
     GlobalProfiler,
     Instrument,
     Metric,
-    MetricField,
     Nanos,
 )
 from professor.os.apple import PortableEvent, Sampler, ThreadSampler
@@ -47,7 +46,7 @@ from professor.os.apple import PortableEvent, Sampler, ThreadSampler
 
 
 @fieldwise_init
-struct PmuCounters(Defaultable, ImplicitlyCopyable, Metric):
+struct PmuCounters(Metric):
     """One reading of the wall clock and of each counter this example programs.
     """
 
@@ -55,80 +54,6 @@ struct PmuCounters(Defaultable, ImplicitlyCopyable, Metric):
     var cycles: Cycles
     var instructions: Count["instructions"]
     var cache_misses: Count["L1D load misses"]
-
-    def __init__(out self):
-        self = Self(
-            Nanos(),
-            Cycles(),
-            Count["instructions"](),
-            Count["L1D load misses"](),
-        )
-
-    def __sub__(self, o: Self) -> Self:
-        return Self(
-            self.nanos - o.nanos,
-            self.cycles - o.cycles,
-            self.instructions - o.instructions,
-            self.cache_misses - o.cache_misses,
-        )
-
-    def __add__(self, o: Self) -> Self:
-        return Self(
-            self.nanos + o.nanos,
-            self.cycles + o.cycles,
-            self.instructions + o.instructions,
-            self.cache_misses + o.cache_misses,
-        )
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self(
-            self.nanos / count,
-            self.cycles / count,
-            self.instructions / count,
-            self.cache_misses / count,
-        )
-
-    def min(self, o: Self) -> Self:
-        return Self(
-            self.nanos.min(o.nanos),
-            self.cycles.min(o.cycles),
-            self.instructions.min(o.instructions),
-            self.cache_misses.min(o.cache_misses),
-        )
-
-    def max(self, o: Self) -> Self:
-        return Self(
-            self.nanos.max(o.nanos),
-            self.cycles.max(o.cycles),
-            self.instructions.max(o.instructions),
-            self.cache_misses.max(o.cache_misses),
-        )
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write(
-            self.nanos,
-            ", ",
-            self.cycles,
-            ", ",
-            self.instructions,
-            ", ",
-            self.cache_misses,
-        )
-
-    def fields(self) -> List[MetricField]:
-        """Names the components so the report can tabulate them separately.
-
-        The third element of each field is the scalar used for percentages.
-        Pass `None` for a component that should show `N/A` instead -- a
-        derived ratio such as instructions per cycle, which would be a fine
-        fifth field here, is not a share of anything.
-        """
-        return [
-            self.nanos.field["wall clock"](),
-            self.cycles.field(),
-            self.instructions.field(),
-            self.cache_misses.field(),
-        ]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -169,15 +94,15 @@ struct Pmu(Instrument):
     def measure(mut self) -> PmuCounters:
         # The clock is read first at both ends of a zone, so a zone's wall
         # time carries exactly one counter read -- the one that opened it.
-        var nanos = Int(perf_counter_ns())
+        var nanos = UInt64(perf_counter_ns())
         try:
             # Values come back in the order the events were added.
             var values = self._thread.sample()
             return PmuCounters(
                 Nanos(nanos),
-                Cycles(Int(values[0])),
-                Count["instructions"](Int(values[1])),
-                Count["L1D load misses"](Int(values[2])),
+                Cycles(values[0]),
+                Count["instructions"](values[1]),
+                Count["L1D load misses"](values[2]),
             )
         except e:
             abort(String(t"could not read the hardware counters: {e}"))

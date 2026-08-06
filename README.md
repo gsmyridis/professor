@@ -40,7 +40,7 @@ from professor import GlobalProfiler, WallClock
 comptime Prof = GlobalProfiler[WallClock]
 
 def parse(input: String) -> Int:
-    with Prof.zone["parse"](bytes=input.byte_length()):
+    with Prof.zone["parse"](bytes=UInt64(input.byte_length())):
         var result = 0
         for codepoint in input.codepoints():
             result += Int(codepoint.is_ascii_digit())
@@ -100,8 +100,9 @@ measurement bug.
 `Prof.start()` and `Prof.end()` bracket the program-wide measurement interval.
 `Prof.report()` prints its total plus per-zone hit count, inclusive and
 exclusive metrics, inclusive time per hit, and inclusive percentage of the
-program total. A zone supplied with `bytes=` also reports aggregate throughput
-for time metrics. Recursive zones are accounted for correctly.
+program total. A zone supplied with `bytes=` also reports aggregate processed
+data. Time metric tables additionally report inclusive throughput. Recursive
+zones are accounted for correctly.
 
 For a complete worked example — a JSON parser computing haversine distances,
 with zones around parsing, tokenization, and computation — see
@@ -141,7 +142,8 @@ Here `patience=10` means ten consecutive repetitions without improvement,
 not ten total repetitions. `batch_reps` groups calls under one measurement and
 `max_reps` is an optional hard limit on total calls. The tester owns the
 instrument, samples it immediately before and after each batch, then updates
-the component-wise minimum, maximum, and average per call.
+the component-wise minimum and maximum. The final table computes each average
+from the exact accumulated total and repetition count.
 
 On a terminal, the current statistics redraw in place beneath the spinner.
 Redirected output receives only the final table. `run()` returns the accumulated
@@ -155,7 +157,7 @@ Redirected output receives only the final table. `run()` returns the accumulated
 registry. Separate values are independent, even when they have the same type:
 
 ```mojo
-from professor.profile import Profiler, WallClock
+from professor import Profiler, WallClock
 
 var parsing_profiler = Profiler[WallClock]()
 var compute_profiler = Profiler[WallClock, Capacity=16]()
@@ -176,7 +178,7 @@ import them wherever you instrument:
 
 ```mojo
 # profile.mojo
-from professor.profile import GlobalProfiler, WallClock
+from professor import GlobalProfiler, WallClock
 
 comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
 ```
@@ -248,51 +250,48 @@ For each zone the report currently includes:
 - `count`: how many times the zone closed.
 - `inclusive`: metric accumulated while the zone was open, children included.
 - `exclusive`: inclusive minus the metric attributed to nested zones.
+- `inclusive_min`: minimum inclusive metric across invocations.
 - `loc`: source file, line, and column for the profiling call site.
-- `memory`: processed bytes when the zone was opened with `bytes=`.
+- `processed_data`: processed bytes for workload-annotated zones.
 
-Pass a non-negative byte count to record a zone's logical workload:
+Pass a byte count as `UInt64` to record a zone's logical workload:
 
 ```mojo
-with MyProfiler.zone["parse"](bytes=input.byte_length()):
+with MyProfiler.zone["parse"](bytes=UInt64(input.byte_length())):
     parse(input)
 ```
 
-Bytes are aggregated with the zone's inclusive interval. For a typed time
-metric, the report adds a `Throughput` column in GB/s and computes the rate once
-from aggregate bytes and aggregate time. Ordinary zones use a separately
-specialized handle and do not carry or update a byte count.
+When the amount of work is learned inside the scope, bind the workload handle
+and add bytes to its invocation-local accumulator:
+
+```mojo
+with MyProfiler.zone["read"](bytes=UInt64(0)) as zone:
+    var count = read_some_data()
+    zone.add_bytes(UInt64(count))
+```
+
+Bytes are summed across every invocation, including recursive invocations.
+They remain reportable when the profiler is switched to an instrument that has
+no time component. For every elapsed-time component, throughput is derived as
+aggregate processed bytes divided by aggregate inclusive time. A zero-time
+interval reports `N/A`; a nonzero interval with zero bytes reports zero.
+Ordinary zones use a separately specialized handle and carry no byte state.
 
 The report's `total` field contains the metric elapsed between `start()` and
-`end()`. Metrics that do not provide a scalar value still print totals and
-per-hit values, but show `N/A` for percentages.
+`end()`.
 
 `end()` and `report()` raise if any zone is still open, because exclusive
 metrics are transiently inconsistent while a zone is in flight. `report()`
-also requires a completed start/end interval. Min/max/mean/variance per zone
-are on the roadmap.
+also requires a completed start/end interval. Additional distribution
+statistics such as variance are on the roadmap.
 
-### Multi-valued metrics
+### Scalar and composite metrics
 
-A metric does not have to be a single number. When a reading decomposes into
-several components — cycles and retired instructions, say — the report prints
-one table per component, each titled with that component's program total:
-
-```text
-cycles — total 7000
-
-Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
------  ---------------  -----  ---------  ---------  --------  -------
-outer  main.mojo:62:28      1       3000       2000      3000    42.9%
-inner  main.mojo:56:28      1       1000       1000      1000    14.3%
-
-instructions — total 17500
-
-Zone   Site             Count  Inclusive  Exclusive  Per iter  % Total
------  ---------------  -----  ---------  ---------  --------  -------
-outer  main.mojo:62:28      1       7500       5000      7500    42.9%
-inner  main.mojo:56:28      1       2500       2500      2500    14.3%
-```
+A metric can be one supported scalar quantity (`Time`, `Count`, or `DataSize`)
+or a flat composite whose immediate fields are those scalar quantities. When a
+reading has several components, such as cycles and retired instructions, the
+report prints one table per component, each titled with that component's
+program total.
 
 Separate tables rather than stacked rows, because the interesting comparison
 is down a column — which zone dominates _this_ metric — and the answer differs
@@ -301,23 +300,42 @@ same. Each table can therefore also be read, and eventually sorted, along its
 own axis. Percentages are computed per component, each against the
 corresponding component of the program total.
 
-Scalar metric components can encode their storage unit as a compile-time
-parameter without adding instance storage:
+Scalar components encode their storage unit as a compile-time parameter
+without adding instance storage:
 
 ```mojo
 @fieldwise_init
-struct CpuMetric(Defaultable, ImplicitlyCopyable, Metric):
-    var elapsed: Time[TimeUnit.NANOS]
+struct CpuMetric(Metric):
+    var elapsed: Time[TimeUnit.Nanos]
     var cycles: Count["cycles"]
     var instructions: Count["instructions"]
     var cache_misses: Count["cache-misses"]
 ```
 
-The composite reading above occupies four integers. Unit names and scales are
-materialized only by `fields()` while constructing a report. `Nanos` and
-`Cycles` remain aliases for `Time[TimeUnit.NANOS]` and `Count["cycles"]`.
+That is the entire composite definition. Professor validates that every field
+is scalar and derives zero construction, delta, accumulation, extrema, and
+report decomposition with compile-time reflection. Nested composites, opaque
+fields, and metadata fields are rejected. The composite above occupies four
+`UInt64` values; unit names and scales are materialized only while building a
+report. `Nanos` and `Cycles` remain aliases for `Time[TimeUnit.Nanos]` and
+`Count["cycles"]`. `TimestampCounter` uses `Count["tsc_ticks"]`, keeping timestamp
+counter ticks distinct from PMU cycles.
 
-A metric with one component yields exactly one table, titled `Program total:`.
+Storage units do not force display units. Each numeric report column chooses
+one display unit from its complete set of values, using decimal SI prefixes for
+data sizes and throughput. Units appear in column headers. By default numbers
+use `.` for thousands, `,` for decimals, and at most three fractional digits.
+Choose a different immutable report format when constructing the report:
+
+```mojo
+from professor import ReportFormat
+
+var report = Prof.report(ReportFormat(",", ".", 2))
+```
+
+A metric with one component yields exactly one table. Anonymous time and data
+scalars use `Program total:`; a scalar `Count` uses its event kind as the table
+identity.
 
 ### Table customization
 
@@ -329,22 +347,23 @@ module:
 from professor.report.table import ColorMode
 
 var tables = Prof.report().tables()
-tables[0].style.color = ColorMode.NEVER
+tables[0].style.color = ColorMode.Never
 print(tables[0])
 ```
 
-### Custom metrics: `Instrument` and `Metric`
+### Custom instruments
 
-Wall-clock time is the default metric, but any monotonically accumulating
-reading works. A metric source implements the `Instrument` trait, and its
-readings implement `Metric`:
+Wall-clock time is the default metric. A custom source implements `Instrument`
+and returns either a supported scalar quantity or a flat `Metric` composite:
 
 ```mojo
-from professor import Profiler, Instrument, Metric
+from professor import Count, Profiler, Instrument, Metric, Nanos
 
 
-struct MyMetric(Copyable, Defaultable, ImplicitlyDeletable, Metric):
-    ...  # __sub__, __add__, __truediv__, min, max, write_to
+@fieldwise_init
+struct MyMetric(Metric):
+    var elapsed: Nanos
+    var events: Count["my-events"]
 
 
 struct MyInstrument(Instrument):
@@ -360,44 +379,10 @@ struct MyInstrument(Instrument):
 var profiler = Profiler[MyInstrument](MyInstrument())
 ```
 
-Metric readings are subtracted to form deltas and added to aggregate them;
-multiplication, division by a count, and `min`/`max` exist so the profiler can
-maintain online statistics. Readings may be multi-valued — for example, a pair
-of hardware counters — with all operations applied elementwise. The
-`Defaultable` constructor must produce the zero reading.
-
-`write_to` and `scalar_value` are enough for a single-valued metric. A
-multi-valued one overrides `fields()` to name its components, which is what
-lets the report stack them:
-
-```mojo
-from professor import MetricField
-
-
-struct Counters(Copyable, Defaultable, ImplicitlyDeletable, Metric):
-    var cycles: Int
-    var instructions: Int
-
-    ...
-
-    def fields(self) -> List[MetricField]:
-        return [
-            MetricField("cycles", String(self.cycles), Float64(self.cycles)),
-            MetricField(
-                "instructions",
-                String(self.instructions),
-                Float64(self.instructions),
-            ),
-        ]
-```
-
-Each `MetricField` carries a component name, the formatted value (unit
-included), and an optional scalar used for percentages — pass `None` for a
-component that should not be compared. The list must have the same length and
-the same order for every reading of a given metric type, including the
-default-constructed one. The default `fields()` returns a single anonymous
-component built from `write_to` and `scalar_value`, so existing metrics need
-no change.
+Field names are stable report identities; the scalar type supplies the quantity
+kind, storage unit, and canonical scale. `Count` also carries an event kind,
+which remains independent of the field name. Metric arithmetic is internal and
+`Metric` does not require `Writable`.
 
 One caveat: zone open and close are on the measurement's hot path and are
 non-raising. An `Instrument` that can fail (for example, one that talks to the

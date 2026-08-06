@@ -1,8 +1,9 @@
-from professor.measure import Memory, Metric, MemoryUnit
+from professor.measure import DataSize, DataSizeUnit, Bytes
+from professor.measure.instrument import _MetricInner
 from std.reflection import SourceLocation
 
 
-struct _Anchor[M: Metric](Copyable, Defaultable):
+struct _Anchor[M: _MetricInner](Copyable, Defaultable):
     var label: StaticString
     """Semantic label."""
 
@@ -13,19 +14,19 @@ struct _Anchor[M: Metric](Copyable, Defaultable):
     """Number of times the target profile zone was exited."""
 
     var inclusive: Self.M
-    """Metric metrics including child profile zones."""
+    """Metric including child profile zones."""
 
     var exclusive: Self.M
-    """Metric metrics excluding child profile zones."""
+    """Metric excluding child profile zones."""
 
     var inclusive_min: Self.M
     """Minimum inclusive metric."""
 
-    var tracks_memory: Bool
-    """Whether this anchor's zones record processed bytes."""
+    var tracks_data: Bool
+    """Whether this anchor's site is workload annotated."""
 
-    var memory: Memory[MemoryUnit.BYTE]
-    """Bytes processed across the same intervals as `inclusive`."""
+    var processed_data: Bytes
+    """Bytes processed across all invocations of this anchor."""
 
     def __init__(out self):
         self.label = ""
@@ -34,8 +35,8 @@ struct _Anchor[M: Metric](Copyable, Defaultable):
         self.inclusive = Self.M()
         self.exclusive = Self.M()
         self.inclusive_min = Self.M()
-        self.tracks_memory = False
-        self.memory = Memory()
+        self.tracks_data = False
+        self.processed_data = DataSize()
 
     def reset_measurements(mut self):
         """Clears statistics while preserving the site's identity."""
@@ -43,4 +44,4 @@ struct _Anchor[M: Metric](Copyable, Defaultable):
         self.inclusive = Self.M()
         self.exclusive = Self.M()
         self.inclusive_min = Self.M()
-        self.memory = Memory()
+        self.processed_data = DataSize()

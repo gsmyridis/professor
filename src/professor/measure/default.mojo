@@ -3,7 +3,7 @@ from std.sys import CompilationTarget
 from std.os import abort
 
 from .instrument import Instrument
-from .quantity import Cycles, Nanos
+from .quantity import Nanos, Ticks
 
 from professor.arch import read_cycle_counter
 
@@ -17,12 +17,14 @@ struct WallClock(Defaultable, Instrument):
         pass
 
     def measure(mut self) -> Self.MetricType:
-        return Self.MetricType(Int(perf_counter_ns()))
+        return Self.MetricType(UInt64(perf_counter_ns()))
 
 
 @fieldwise_init
-struct InvariantTSC(Defaultable, Instrument):
-    comptime MetricType = Cycles
+struct TimestampCounter(Defaultable, Instrument):
+    """An `Instrument` that reads the invariant timestamp counter."""
+
+    comptime MetricType = Ticks
 
     var value: UInt64
 
@@ -30,4 +32,4 @@ struct InvariantTSC(Defaultable, Instrument):
         return self.__init__(0)
 
     def measure(mut self) -> Self.MetricType:
-        return Self.MetricType(Int(read_cycle_counter()))
+        return Self.MetricType(read_cycle_counter())

@@ -1,22 +1,17 @@
-"""Lays a `Report` out as one `Table` per metric component.
+"""Materializes typed profiler results as one table per scalar component."""
 
-Everything metric-specific lives here; `_table` knows only about strings,
-widths and colors. A metric that decomposes into several components (cycles
-and retired instructions, say) gets one table each, so every table can be read
--- and eventually sorted -- along its own axis.
-"""
-
-from professor.measure import (
-    Memory,
-    Metric,
-    MetricDimension,
-    MetricField,
-    Throughput,
-)
+from std.math import floor, log10, pow, round
 from std.os.path import dirname
 from std.pathlib import cwd, Path
 from std.reflection import SourceLocation
 
+from professor.measure.instrument import (
+    MetricComponent,
+    _MetricInner,
+    MType,
+)
+
+from .format import ReportFormat
 from .stat import ZoneStatistics
 from .table import Align, Cell, Color, Column, Table, TableStyle
 
@@ -28,6 +23,7 @@ comptime _INCLUSIVE_LABEL = "Inclusive"
 comptime _EXCLUSIVE_LABEL = "Exclusive"
 comptime _INCLUSIVE_MIN_LABEL = "Min. Inclusive"
 comptime _INCLUSIVE_PER_ITER_LABEL = "Inclusive/Iter"
+comptime _PROCESSED_DATA_LABEL = "Processed Data"
 comptime _THROUGHPUT_LABEL = "Throughput"
 comptime _INCLUSIVE_PERCENT_LABEL = "Inclusive (%)"
 comptime _EXCLUSIVE_PERCENT_LABEL = "Exclusive (%)"
@@ -40,117 +36,155 @@ comptime _MANIFESTS: InlineArray[StaticString, 3] = [
     "uv.toml",
     "pyproject.toml",
 ]
-"""Any of these marks the project root, whose prefix is stripped from sites."""
+
+
+@fieldwise_init
+struct _DisplayUnit(Copyable):
+    var scale: UInt64
+    var symbol: String
 
 
 def zone_tables[
-    M: Metric
-](total: M, stats: List[ZoneStatistics[M]]) raises -> List[Table]:
-    """Builds one per-zone table for each scalar component of the metric.
-
-    A single-valued metric yields exactly one table, titled with the program
-    total.
-
-    Args:
-        total: Metric for the whole duration of the profiling.
-        stats: Aggregate statistics for each zone.
-
-    Returns:
-        A list of tables displaying the zone statistics for each scalar
-        component of the performance metric.
-    """
-    # The total's fields define the report's shape: one table per component,
-    # in the order the metric declares them. `Metric.fields()` requires every
-    # reading to agree; `_component_table` checks it as it reads them.
-    var total_fields = total.fields()
-    var count = len(total_fields)
-
+    M: _MetricInner
+](
+    total: M,
+    stats: List[ZoneStatistics[M]],
+    format: ReportFormat,
+) raises -> List[Table]:
+    _validate_format(format)
+    var total_components = total.components()
     var root = _project_root()
-
-    var tables = List[Table](capacity=count)
-    for index in range(count):
-        tables.append(_component_table(total_fields, stats, index, root))
+    var tables = List[Table](capacity=len(total_components))
+    for index in range(len(total_components)):
+        tables.append(
+            _component_table(total_components, stats, index, root, format)
+        )
     return tables^
 
 
 def _component_table[
-    S: Metric
+    S: _MetricInner
 ](
-    total_fields: List[MetricField],
+    total_components: List[MetricComponent],
     stats: List[ZoneStatistics[S]],
     index: Int,
     root: String,
+    format: ReportFormat,
 ) raises -> Table:
-    var show_throughput = _is_time_field(total_fields[index]) and _has_memory(
-        stats
+    ref total = total_components[index]
+    var tracks_data = _tracks_data(stats)
+    var show_throughput = total.kind == MType.Time and tracks_data
+
+    var inclusive_unit = _select_component_unit(
+        total, _component_column_max(stats, index, 0)
     )
+    var exclusive_unit = _select_component_unit(
+        total, _component_column_max(stats, index, 1)
+    )
+    var minimum_unit = _select_component_unit(
+        total, _component_column_max(stats, index, 2)
+    )
+    var average_unit = _select_component_unit(
+        total, _component_column_max(stats, index, 3)
+    )
+    var data_unit = _select_data_unit(_processed_data_max(stats))
+    var throughput_unit = _select_rate_unit(
+        _throughput_max(stats, index) if show_throughput else 0.0
+    )
+
     var columns = [
         Column(_ZONE_LABEL),
         Column(_SITE_LABEL),
-        Column(_COUNT_LABEL, align=Align.RIGHT),
-        Column(_INCLUSIVE_LABEL, align=Align.RIGHT),
-        Column(_EXCLUSIVE_LABEL, align=Align.RIGHT),
-        Column(_INCLUSIVE_MIN_LABEL, align=Align.RIGHT),
-        Column(_INCLUSIVE_PER_ITER_LABEL, align=Align.RIGHT),
+        Column(_COUNT_LABEL, align=Align.Right),
+        Column(
+            _column_header(_INCLUSIVE_LABEL, inclusive_unit.symbol),
+            align=Align.Right,
+        ),
+        Column(
+            _column_header(_EXCLUSIVE_LABEL, exclusive_unit.symbol),
+            align=Align.Right,
+        ),
+        Column(
+            _column_header(_INCLUSIVE_MIN_LABEL, minimum_unit.symbol),
+            align=Align.Right,
+        ),
+        Column(
+            _column_header(_INCLUSIVE_PER_ITER_LABEL, average_unit.symbol),
+            align=Align.Right,
+        ),
     ]
+    if tracks_data:
+        columns.append(
+            Column(
+                _column_header(_PROCESSED_DATA_LABEL, data_unit.symbol),
+                align=Align.Right,
+            )
+        )
     if show_throughput:
-        columns.append(Column(_THROUGHPUT_LABEL, align=Align.RIGHT))
-    columns.append(Column(_INCLUSIVE_PERCENT_LABEL, align=Align.RIGHT))
-    columns.append(Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.RIGHT))
+        columns.append(
+            Column(
+                _column_header(_THROUGHPUT_LABEL, throughput_unit.symbol),
+                align=Align.Right,
+            )
+        )
+    columns.append(Column(_INCLUSIVE_PERCENT_LABEL, align=Align.Right))
+    columns.append(Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.Right))
 
     var table = Table(
-        _title(total_fields, index),
+        _title(total, format),
         columns^,
         TableStyle(),
     )
 
     for ref stat in stats:
-        var inclusive = stat.inclusive.fields()
-        var exclusive = stat.exclusive.fields()
-        var inclusive_min = stat.inclusive_min.fields()
-        var inclusive_per_iter = (stat.inclusive / stat.count).fields()
+        var inclusive = stat.inclusive.components()[index].copy()
+        var exclusive = stat.exclusive.components()[index].copy()
+        var inclusive_min = stat.inclusive_min.components()[index].copy()
+        var inclusive_value = inclusive.canonical_value()
+        var exclusive_value = exclusive.canonical_value()
+        var average_value = inclusive_value / Float64(stat.count)
+        var total_value = total.canonical_value()
 
-        _check_shape(inclusive, total_fields)
-        _check_shape(exclusive, total_fields)
-        _check_shape(inclusive_min, total_fields)
-        _check_shape(inclusive_per_iter, total_fields)
-
-        var incl_percent = _percent_value(
-            inclusive[index].scalar, total_fields[index].scalar
-        )
-        var excl_percent = _percent_value(
-            exclusive[index].scalar, total_fields[index].scalar
-        )
+        var incl_percent = _percent_value(inclusive_value, total_value)
+        var excl_percent = _percent_value(exclusive_value, total_value)
         var cells = [
             Cell(String(stat.name)),
             Cell(_format_site(stat.loc, root)),
-            Cell(String(stat.count)),
-            Cell(inclusive[index].value.copy()),
-            Cell(exclusive[index].value.copy()),
-            Cell(inclusive_min[index].value.copy()),
-            Cell(inclusive_per_iter[index].value.copy()),
+            Cell(_group_integer(UInt64(stat.count), format)),
+            Cell(_format_component(inclusive, inclusive_unit, format)),
+            Cell(_format_component(exclusive, exclusive_unit, format)),
+            Cell(_format_component(inclusive_min, minimum_unit, format)),
+            Cell(
+                _format_number(
+                    average_value / Float64(average_unit.scale), format
+                )
+            ),
         ]
+        if tracks_data:
+            cells.append(Cell(_format_processed_data(stat, data_unit, format)))
         if show_throughput:
             cells.append(
-                Cell(_format_throughput(stat.memory, inclusive[index]))
+                Cell(
+                    _format_throughput(
+                        stat, inclusive_value, throughput_unit, format
+                    )
+                )
             )
         cells.append(
             Cell(
-                _format_percent(incl_percent),
+                _format_percent(incl_percent, format),
                 color=_percent_color(incl_percent),
             )
         )
         cells.append(
             Cell(
-                _format_percent(excl_percent),
+                _format_percent(excl_percent, format),
                 color=_percent_color(excl_percent),
             )
         )
         table.add_row(cells^)
 
     if len(stats) == 0:
-        # A row carries one cell per column; the empty ones are not rendered,
-        # so this reads as a single line under the header.
         var cells = List[Cell](capacity=table.num_columns())
         cells.append(Cell("(no zones recorded)"))
         for _ in range(table.num_columns() - 1):
@@ -160,34 +194,312 @@ def _component_table[
     return table^
 
 
-def _title(total_fields: List[MetricField], index: Int) -> String:
-    """Names the component and states its program-wide total."""
-    ref field = total_fields[index]
-    if field.name:
-        return String(t"{field.name} — total {field.value}")
-    return String(t"Program total: {field.value}")
+def _title(component: MetricComponent, format: ReportFormat) -> String:
+    var unit = _select_component_unit(component, component.canonical_value())
+    var value = _format_component(component, unit, format)
+    var quantity = value
+    if unit.symbol:
+        quantity += " " + unit.symbol
+    if component.name:
+        return component.name + " - total " + quantity
+    return "Program total: " + quantity
 
 
 # ===----------------------------------------------------------------------=== #
-# Helpers
+# Unit selection
+# ===----------------------------------------------------------------------=== #
+
+
+def _select_component_unit(
+    component: MetricComponent, maximum: Float64
+) -> _DisplayUnit:
+    if component.kind == MType.Time:
+        if maximum >= 60_000_000_000.0:
+            return _DisplayUnit(60_000_000_000, "min")
+        if maximum >= 1_000_000_000.0:
+            return _DisplayUnit(1_000_000_000, "s")
+        if maximum >= 1_000_000.0:
+            return _DisplayUnit(1_000_000, "ms")
+        if maximum >= 1_000.0:
+            return _DisplayUnit(1_000, "us")
+        return _DisplayUnit(1, "ns")
+    if component.kind == MType.DataSize:
+        return _select_data_unit(maximum)
+
+    var suffix = component.count_kind.copy()
+    if maximum >= 1_000_000_000.0:
+        return _DisplayUnit(1_000_000_000, _count_symbol("G", suffix))
+    if maximum >= 1_000_000.0:
+        return _DisplayUnit(1_000_000, _count_symbol("M", suffix))
+    if maximum >= 1_000.0:
+        return _DisplayUnit(1_000, _count_symbol("k", suffix))
+    return _DisplayUnit(1, suffix^)
+
+
+def _select_data_unit(maximum: Float64) -> _DisplayUnit:
+    if maximum >= 1_000_000_000_000.0:
+        return _DisplayUnit(1_000_000_000_000, "TB")
+    if maximum >= 1_000_000_000.0:
+        return _DisplayUnit(1_000_000_000, "GB")
+    if maximum >= 1_000_000.0:
+        return _DisplayUnit(1_000_000, "MB")
+    if maximum >= 1_000.0:
+        return _DisplayUnit(1_000, "kB")
+    return _DisplayUnit(1, "B")
+
+
+def _select_rate_unit(maximum: Float64) -> _DisplayUnit:
+    var unit = _select_data_unit(maximum)
+    unit.symbol += "/s"
+    return unit^
+
+
+def _count_symbol(prefix: String, kind: String) -> String:
+    if not kind:
+        return prefix
+    return prefix + " " + kind
+
+
+def _column_header(label: String, unit: String) -> String:
+    if not unit:
+        return label
+    return label + " (" + unit + ")"
+
+
+# ===----------------------------------------------------------------------=== #
+# Column values
+# ===----------------------------------------------------------------------=== #
+
+
+def _component_column_max[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]], index: Int, column: Int) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        var value: Float64
+        if column == 0:
+            value = stat.inclusive.components()[index].canonical_value()
+        elif column == 1:
+            value = stat.exclusive.components()[index].canonical_value()
+        elif column == 2:
+            value = stat.inclusive_min.components()[index].canonical_value()
+        else:
+            value = stat.inclusive.components()[
+                index
+            ].canonical_value() / Float64(stat.count)
+        maximum = max(maximum, value)
+    return maximum
+
+
+def _processed_data_max[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]]) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        if stat.processed_data:
+            maximum = max(maximum, Float64(stat.processed_data.value().value))
+    return maximum
+
+
+def _tracks_data[S: _MetricInner](stats: List[ZoneStatistics[S]]) -> Bool:
+    for ref stat in stats:
+        if stat.processed_data:
+            return True
+    return False
+
+
+def _throughput_max[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        if not stat.processed_data:
+            continue
+        var elapsed = stat.inclusive.components()[index].canonical_value()
+        if elapsed <= 0.0:
+            continue
+        var rate = (
+            Float64(stat.processed_data.value().value)
+            * 1_000_000_000.0
+            / elapsed
+        )
+        maximum = max(maximum, rate)
+    return maximum
+
+
+def _format_processed_data[
+    S: _MetricInner
+](stat: ZoneStatistics[S], unit: _DisplayUnit, format: ReportFormat) -> String:
+    if not stat.processed_data:
+        return "N/A"
+    return _format_scaled_integer(
+        stat.processed_data.value().value, UInt64(1), unit.scale, format
+    )
+
+
+def _format_throughput[
+    S: _MetricInner
+](
+    stat: ZoneStatistics[S],
+    elapsed_nanos: Float64,
+    unit: _DisplayUnit,
+    format: ReportFormat,
+) -> String:
+    if not stat.processed_data or elapsed_nanos <= 0.0:
+        return "N/A"
+    var bytes_per_second = (
+        Float64(stat.processed_data.value().value)
+        * 1_000_000_000.0
+        / elapsed_nanos
+    )
+    return _format_number(bytes_per_second / Float64(unit.scale), format)
+
+
+# ===----------------------------------------------------------------------=== #
+# Numeric formatting
+# ===----------------------------------------------------------------------=== #
+
+
+def _validate_format(format: ReportFormat) raises:
+    if format.thousands_separator().byte_length() != 1:
+        raise Error("thousands_separator must be one UTF-8 byte")
+    if format.decimal_separator().byte_length() != 1:
+        raise Error("decimal_separator must be one UTF-8 byte")
+    if format.thousands_separator() == format.decimal_separator():
+        raise Error("thousands and decimal separators must differ")
+    if format.maximum_decimals() < 0 or format.maximum_decimals() > 9:
+        raise Error("maximum_decimals must be between 0 and 9")
+
+
+def _power_of_ten(exponent: Int) -> UInt64:
+    var result = UInt64(1)
+    for _ in range(exponent):
+        result *= 10
+    return result
+
+
+def _group_integer(value: UInt64, format: ReportFormat) -> String:
+    if value == 0:
+        return "0"
+    var remaining = value
+    var result = String()
+    var digits = 0
+    while remaining > 0:
+        if digits > 0 and digits % 3 == 0:
+            result = format.thousands_separator() + result
+        result = String(remaining % 10) + result
+        remaining //= 10
+        digits += 1
+    return result^
+
+
+def _format_number(value: Float64, format: ReportFormat) -> String:
+    var factor = _power_of_ten(format.maximum_decimals())
+    var scaled_float = round(value * Float64(factor))
+    if value > 0.0 and scaled_float == 0.0:
+        return _format_scientific(value, format)
+    if scaled_float > Float64(UInt64.MAX):
+        return _format_scientific(value, format)
+
+    var scaled = UInt64(scaled_float)
+    var whole = scaled // factor
+    var fraction = scaled % factor
+    var decimals = format.maximum_decimals()
+    while decimals > 0 and fraction % 10 == 0:
+        fraction //= 10
+        decimals -= 1
+
+    var result = _group_integer(whole, format)
+    if decimals == 0:
+        return result^
+
+    var fraction_text = String(fraction)
+    while fraction_text.byte_length() < decimals:
+        fraction_text = "0" + fraction_text
+    result += format.decimal_separator() + fraction_text
+    return result^
+
+
+def _format_component(
+    component: MetricComponent,
+    unit: _DisplayUnit,
+    format: ReportFormat,
+) -> String:
+    return _format_scaled_integer(
+        component.value, component.storage_scale, unit.scale, format
+    )
+
+
+def _format_scaled_integer(
+    value: UInt64,
+    storage_scale: UInt64,
+    display_scale: UInt64,
+    format: ReportFormat,
+) -> String:
+    if storage_scale >= display_scale:
+        var multiplier = storage_scale // display_scale
+        if value <= UInt64.MAX // multiplier:
+            return _group_integer(value * multiplier, format)
+    else:
+        var divisor = display_scale // storage_scale
+        if value % divisor == 0:
+            return _group_integer(value // divisor, format)
+
+    return _format_number(
+        Float64(value) * Float64(storage_scale) / Float64(display_scale),
+        format,
+    )
+
+
+def _format_scientific(value: Float64, format: ReportFormat) -> String:
+    if value == 0.0:
+        return "0"
+    var exponent = Int(floor(log10(value)))
+    var mantissa = value / pow(10.0, exponent)
+    var scientific_format = ReportFormat(
+        format.thousands_separator(), format.decimal_separator(), 2
+    )
+    return _format_number(mantissa, scientific_format) + "e" + String(exponent)
+
+
+def _percent_value(part: Float64, total: Float64) -> Optional[Float64]:
+    if total <= 0.0:
+        return None
+    return part * 100.0 / total
+
+
+def _format_percent(percent: Optional[Float64], format: ReportFormat) -> String:
+    if not percent:
+        return "N/A"
+    var decimals = min(format.maximum_decimals(), 1)
+    var percent_format = ReportFormat(
+        format.thousands_separator(), format.decimal_separator(), decimals
+    )
+    return _format_number(percent.value(), percent_format) + "%"
+
+
+def _percent_color(percent: Optional[Float64]) -> Color:
+    if not percent:
+        return Color.Default
+    if percent.value() >= _HOT_PERCENT:
+        return Color.Red
+    if percent.value() >= _WARM_PERCENT:
+        return Color.Yellow
+    return Color.Green
+
+
+# ===----------------------------------------------------------------------=== #
+# Sites
 # ===----------------------------------------------------------------------=== #
 
 
 def _project_root() raises -> String:
-    """Returns the directory holding a manifest, searching upwards from `cwd`.
-
-    Reported sites are written relative to it, so the report reads the same
-    however deep in the tree the program was started from. A program run
-    outside any project has no root to speak of: this returns an empty string
-    and sites keep their full path, which is unwieldy but not wrong.
-    """
     var directory = String(cwd())
     while True:
         for manifest in _MANIFESTS:
             if (Path(directory) / manifest).is_file():
                 return directory^
         var parent = dirname(directory)
-        # `dirname` is its own fixed point at the filesystem root.
         if parent == directory:
             return String()
         directory = parent^
@@ -204,88 +516,3 @@ def _format_site(loc: SourceLocation, root: String) -> String:
             file = String(file[byte = prefix.byte_length() :])
 
     return String(t"{file}:{loc.line()}:{loc.column()}")
-
-
-def _check_shape(
-    fields: List[MetricField], total_fields: List[MetricField]
-) raises:
-    """Raises unless `fields` decomposes the way the program total does.
-
-    Names, not just counts: a reading that reorders its fields would keep the
-    length and quietly hand every table another component's numbers.
-    """
-    comptime SHAPE_ERROR = (
-        "Metric.fields() must return the same fields, with the same names and"
-        " in the same order, for every reading."
-    )
-    if len(fields) != len(total_fields):
-        raise Error(SHAPE_ERROR)
-    for i in range(len(fields)):
-        if fields[i].name != total_fields[i].name:
-            raise Error(SHAPE_ERROR)
-        if fields[i].unit and not total_fields[i].unit:
-            raise Error(SHAPE_ERROR)
-        if total_fields[i].unit and not fields[i].unit:
-            raise Error(SHAPE_ERROR)
-        if fields[i].unit:
-            ref unit = fields[i].unit.value()
-            ref total_unit = total_fields[i].unit.value()
-            if (
-                unit.dimension != total_unit.dimension
-                or unit.scale != total_unit.scale
-                or unit.symbol != total_unit.symbol
-            ):
-                raise Error(SHAPE_ERROR)
-
-
-def _has_memory[S: Metric](stats: List[ZoneStatistics[S]]) -> Bool:
-    for ref stat in stats:
-        if stat.memory:
-            return True
-    return False
-
-
-def _is_time_field(field: MetricField) -> Bool:
-    if not field.unit:
-        return False
-    return field.unit.value().dimension == MetricDimension.TIME
-
-
-def _format_throughput(
-    memory: Optional[Memory[]], field: MetricField
-) -> String:
-    if not memory or not field.scalar or not field.unit:
-        return "N/A"
-    ref unit = field.unit.value()
-    if unit.dimension != MetricDimension.TIME:
-        return "N/A"
-    var elapsed_nanos = field.scalar.value() * unit.scale
-    if elapsed_nanos <= 0.0:
-        return "N/A"
-
-    return String(Throughput(memory.value(), elapsed_nanos))
-
-
-def _percent_value(
-    part: Optional[Float64], total: Optional[Float64]
-) -> Optional[Float64]:
-    if not part or not total or total.value() <= 0.0:
-        return None
-    return part.value() * 100.0 / total.value()
-
-
-def _format_percent(percent: Optional[Float64]) -> String:
-    if not percent:
-        return "N/A"
-    var rounded = Float64(Int(percent.value() * 10.0 + 0.5)) / 10.0
-    return String(t"{rounded}%")
-
-
-def _percent_color(percent: Optional[Float64]) -> Color:
-    if not percent:
-        return Color.DEFAULT
-    if percent.value() >= _HOT_PERCENT:
-        return Color.RED
-    if percent.value() >= _WARM_PERCENT:
-        return Color.YELLOW
-    return Color.GREEN

@@ -2,33 +2,13 @@ from std.benchmark import keep
 from std.time import perf_counter_ns
 from std.benchmark import black_box
 
-from professor import Profiler, Instrument, Metric, WallClock
+from professor import Count, GlobalProfiler, Instrument, WallClock
 
 
-# An instrument whose metric is empty and whose reading costs nothing: zone
+# An instrument whose metric is constant and whose reading costs nothing: zone
 # open/close through it measures pure profiler bookkeeping (state fetch, site
 # probe, nesting bookkeeping, anchor update) with no clock reads.
-struct NullSample(Defaultable, ImplicitlyCopyable, Metric):
-    def __init__(out self):
-        pass
-
-    def __sub__(self, other: Self) -> Self:
-        return Self()
-
-    def __add__(self, other: Self) -> Self:
-        return Self()
-
-    def __truediv__(self, count: Int) -> Self:
-        return Self()
-
-    def min(self, other: Self) -> Self:
-        return Self()
-
-    def max(self, other: Self) -> Self:
-        return Self()
-
-    def write_to(self, mut writer: Some[Writer]):
-        writer.write("-")
+comptime NullSample = Count["null"]
 
 
 struct NullClock(Instrument):
@@ -41,8 +21,8 @@ struct NullClock(Instrument):
         return NullSample()
 
 
-comptime WallProf = Profiler[WallClock, Tag="bench.wall"]
-comptime NullProf = Profiler[NullClock, Tag="bench.null"]
+comptime WallProf = GlobalProfiler[WallClock, Tag="bench.wall"]
+comptime NullProf = GlobalProfiler[NullClock, Tag="bench.null"]
 
 comptime REPS = 5
 
@@ -75,7 +55,7 @@ def bench_state_fetch(n: Int) -> Float64:
     var acc = 0
     var t0 = Int(perf_counter_ns())
     for i in range(n):
-        var st = WallProf._state()
+        var st = WallProf._profiler()[]._state()
         acc += i
         keep(acc)
         keep(st)
@@ -88,6 +68,18 @@ def bench_zone_null(n: Int) -> Float64:
     var t0 = Int(perf_counter_ns())
     for i in range(n):
         var z = NullProf.zone["bench"]()
+        acc += i
+        keep(acc)
+        z^.close()
+    var t1 = Int(perf_counter_ns())
+    return Float64(t1 - t0) / Float64(n)
+
+
+def bench_zone_null_bytes(n: Int) -> Float64:
+    var acc = 0
+    var t0 = Int(perf_counter_ns())
+    for i in range(n):
+        var z = NullProf.zone["bench.bytes"](bytes=UInt64(i))
         acc += i
         keep(acc)
         z^.close()
@@ -177,12 +169,14 @@ def main() raises:
     # Warmup: register sites, create globals, warm caches.
     _ = bench_baseline(n)
     _ = bench_zone_null(n)
+    _ = bench_zone_null_bytes(n)
     _ = bench_zone_wall(n)
 
     var base = _min_of[bench_baseline](n)
     var clock = _min_of[bench_clock_pair](n)
     var state = _min_of[bench_state_fetch](n)
     var znull = _min_of[bench_zone_null](n)
+    var znullb = _min_of[bench_zone_null_bytes](n)
     var zwall = _min_of[bench_zone_wall](n)
     var workload_n = black_box(200_000)
     _ = bench_workload_baseline(workload_n)
@@ -214,6 +208,13 @@ def main() raises:
         _fmt(znull),
         "ns/iter  (delta",
         _fmt(znull - base),
+        "ns)",
+    )
+    print(
+        "+ zone open/close, bytes    :",
+        _fmt(znullb),
+        "ns/iter  (delta",
+        _fmt(znullb - base),
         "ns)",
     )
     print(
