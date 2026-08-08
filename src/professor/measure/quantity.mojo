@@ -27,24 +27,16 @@ struct TimeUnit(Equatable, ImplicitlyCopyable, Writable):
 
     var code: Int
     var scale: UInt64
+    var symbol: StaticString
 
-    comptime Nanos = Self(0, 1)
-    comptime Micros = Self(1, 1_000)
-    comptime Millis = Self(2, 1_000_000)
-    comptime Seconds = Self(3, 1_000_000_000)
-    comptime Minutes = Self(4, 60_000_000_000)
+    comptime Nanos = Self(0, 1, "ns")
+    comptime Micros = Self(1, 1_000, "us")
+    comptime Millis = Self(2, 1_000_000, "ms")
+    comptime Seconds = Self(3, 1_000_000_000, "s")
+    comptime Minutes = Self(4, 60_000_000_000, "min")
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.Nanos:
-            writer.write("ns")
-        elif self == Self.Micros:
-            writer.write("us")
-        elif self == Self.Millis:
-            writer.write("ms")
-        elif self == Self.Seconds:
-            writer.write("s")
-        elif self == Self.Minutes:
-            writer.write("min")
+        writer.write(self.symbol)
 
 
 @fieldwise_init
@@ -113,19 +105,16 @@ struct CountUnit(Equatable, ImplicitlyCopyable, Writable):
 
     var code: Int
     var scale: UInt64
+    var symbol: StaticString
+    """The SI prefix, empty for individual events."""
 
-    comptime Single = Self(0, 1)
-    comptime Thousand = Self(1, 1_000)
-    comptime Million = Self(2, 1_000_000)
-    comptime Billion = Self(3, 1_000_000_000)
+    comptime Single = Self(0, 1, "")
+    comptime Thousand = Self(1, 1_000, "k")
+    comptime Million = Self(2, 1_000_000, "Mil")
+    comptime Billion = Self(3, 1_000_000_000, "Bil")
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.Thousand:
-            writer.write("k")
-        elif self == Self.Million:
-            writer.write("M")
-        elif self == Self.Billion:
-            writer.write("G")
+        writer.write(self.symbol)
 
 
 @fieldwise_init
@@ -194,24 +183,16 @@ struct DataSizeUnit(Equatable, ImplicitlyCopyable, Writable):
 
     var code: Int
     var scale: UInt64
+    var symbol: StaticString
 
-    comptime Byte = Self(0, 1)
-    comptime Kilobyte = Self(1, 1_000)
-    comptime Megabyte = Self(2, 1_000_000)
-    comptime Gigabyte = Self(3, 1_000_000_000)
-    comptime Terabyte = Self(4, 1_000_000_000_000)
+    comptime Byte = Self(0, 1, "B")
+    comptime Kilobyte = Self(1, 1_000, "kB")
+    comptime Megabyte = Self(2, 1_000_000, "MB")
+    comptime Gigabyte = Self(3, 1_000_000_000, "GB")
+    comptime Terabyte = Self(4, 1_000_000_000_000, "TB")
 
     def write_to(self, mut writer: Some[Writer]):
-        if self == Self.Byte:
-            writer.write("B")
-        elif self == Self.Kilobyte:
-            writer.write("kB")
-        elif self == Self.Megabyte:
-            writer.write("MB")
-        elif self == Self.Gigabyte:
-            writer.write("GB")
-        elif self == Self.Terabyte:
-            writer.write("TB")
+        writer.write(self.symbol)
 
 
 @fieldwise_init

@@ -184,5 +184,5 @@ def main() raises:
 
     Prof.end()
 
-    print("result:", total, "\n")
+    print("result:", total)
     print(Prof.report())
