@@ -158,8 +158,6 @@ def test_scalar_metric_renders_a_single_table() raises:
     assert_true(out.startswith("Program total: 3 ns\n\n"))
     assert_equal(len(Prof.report().tables()), 1)
     assert_equal(Prof.report().tables()[0].column(3).header, "Inclusive (ns)")
-    var formatted = Prof.report(format=ReportFormat(",", ".", 2))
-    assert_equal(formatted.format().decimal_separator(), ".")
 
     var rows = _rows_under(out, "Program total: 3 ns")
     assert_equal(len(rows), 1)
@@ -206,7 +204,7 @@ def test_each_scalar_field_gets_its_own_table() raises:
     assert_true(out.find("instructions - total 750 instructions\n\n") != -1)
 
 
-def test_field_name_is_table_identity_and_count_kind_is_unit() raises:
+def test_count_kind_is_named_by_the_title_not_every_column() raises:
     comptime Prof = GlobalProfiler[FakePmu, Tag="test.report.identities"]
 
     Prof.start()
@@ -216,8 +214,9 @@ def test_field_name_is_table_identity_and_count_kind_is_unit() raises:
 
     var tables = Prof.report().tables()
     assert_equal(tables[0].title, "cycles - total 300 cycles")
-    assert_equal(tables[0].column(3).header, "Inclusive (cycles)")
+    assert_equal(tables[0].column(3).header, "Inclusive")
     assert_equal(tables[1].title, "instructions - total 750 instructions")
+    assert_equal(tables[1].column(3).header, "Inclusive")
 
 
 def test_every_zone_appears_in_every_component_table() raises:
@@ -248,11 +247,11 @@ def test_percentages_are_computed_per_component() raises:
 
     var out = _plain(Prof.report())
     assert_true(
-        _rows_under(out, "cycles - total 300 cycles")[0].endswith("33,3%")
+        _rows_under(out, "cycles - total 300 cycles")[0].endswith("33.3%")
     )
     assert_true(
         _rows_under(out, "instructions - total 750 instructions")[0].endswith(
-            "33,3%"
+            "33.3%"
         )
     )
 
@@ -349,15 +348,30 @@ def test_zero_elapsed_is_na_and_zero_bytes_is_zero_rate() raises:
             Nanos(1),
             DataSize[](0),
         ),
+        ZoneStatistics[Nanos](
+            "real",
+            _loc(),
+            1,
+            Nanos(1_000),
+            Nanos(1_000),
+            Nanos(1_000),
+            DataSize[](2_000),
+        ),
     ]
-    var table = Report[Nanos](Nanos(1), stats^).tables()[0].copy()
+    var table = Report[Nanos](Nanos(1_000), stats^).tables()[0].copy()
+    # A zero-elapsed zone divides to infinity unless it is skipped, which would
+    # drag the whole column to the top of the unit ladder.
+    assert_equal(table.column(8).header, "Throughput (GB/s)")
+
     table.style.color = ColorMode.Never
     table.style.gap = "|"
     var lines = String(table).splitlines()
-    var zero_time = lines[len(lines) - 2].split("|")
-    var zero_bytes = lines[len(lines) - 1].split("|")
+    var zero_time = lines[len(lines) - 3].split("|")
+    var zero_bytes = lines[len(lines) - 2].split("|")
+    var real = lines[len(lines) - 1].split("|")
     assert_equal(String(zero_time[8].strip()), "N/A")
     assert_equal(String(zero_bytes[8].strip()), "0")
+    assert_equal(String(real[8].strip()), "2")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -387,31 +401,52 @@ def test_each_numeric_column_uses_one_unit_selected_from_its_maximum() raises:
     assert_equal(String(lines[len(lines) - 1].split("|")[3].strip()), "10")
 
 
-def test_default_and_custom_separators_are_report_owned() raises:
+def test_scaled_count_column_shows_only_the_si_prefix() raises:
+    comptime Instructions = Count["instructions"]
+    var stats = [
+        ZoneStatistics[Instructions](
+            "a",
+            _loc(),
+            1,
+            Instructions(2_000),
+            Instructions(2_000),
+            Instructions(2_000),
+            None,
+        )
+    ]
+    var report = Report[Instructions](Instructions(2_000), stats^)
+    var table = report.tables()[0].copy()
+    assert_equal(table.title, "instructions - total 2 k instructions")
+    assert_equal(table.column(3).header, "Inclusive (k)")
+    assert_equal(table.column(6).header, "Inclusive/Iter (k)")
+
+
+def test_maximum_decimals_is_report_owned() raises:
     var stats = [
         ZoneStatistics[Nanos](
             "many",
             _loc(),
             1_234,
-            Nanos(1_230),
-            Nanos(1_230),
-            Nanos(1_230),
+            Nanos(1_234),
+            Nanos(1_234),
+            Nanos(1_234),
             None,
         )
     ]
     var default_report = Report[Nanos](Nanos(2_000), stats.copy())
     var custom_report = Report[Nanos](
-        Nanos(2_000), stats^, ReportFormat(",", ".", 2)
+        Nanos(2_000), stats^, ReportFormat(max_decimals=3)
     )
-    assert_equal(default_report.format().thousands_separator(), ".")
-    assert_equal(custom_report.format().decimal_separator(), ".")
-    assert_true(_plain(default_report).find("1.234") != -1)
+    # Both group thousands with `,` and separate decimals with `.`; only the
+    # retained decimal count is configurable.
+    assert_true(_plain(default_report).find("1,234") != -1)
     assert_true(_plain(custom_report).find("1,234") != -1)
-    assert_true(_plain(default_report).find("1,23") != -1)
-    assert_true(_plain(custom_report).find("1.23") != -1)
+    assert_true(_plain(default_report).find("1.23") != -1)
+    assert_true(_plain(default_report).find("1.234") == -1)
+    assert_true(_plain(custom_report).find("1.234") != -1)
 
 
-def test_nonzero_value_that_rounds_to_zero_uses_scientific_notation() raises:
+def test_nonzero_value_below_the_last_decimal_renders_zero() raises:
     var stats = [
         ZoneStatistics[Nanos](
             "tiny", _loc(), 1, Nanos(1), Nanos(1), Nanos(1), None
@@ -426,15 +461,24 @@ def test_nonzero_value_that_rounds_to_zero_uses_scientific_notation() raises:
             None,
         ),
     ]
-    var out = _plain(Report[Nanos](Nanos(1_000_000_001), stats^))
-    assert_true(out.find("1e-9") != -1)
+    var report = Report[Nanos](Nanos(1_000_000_001), stats^)
+    var table = report.tables()[0].copy()
+    table.style.color = ColorMode.Never
+    table.style.gap = "|"
+    assert_equal(table.column(3).header, "Inclusive (s)")
+
+    var lines = String(table).splitlines()
+    assert_equal(String(lines[len(lines) - 2].split("|")[3].strip()), "0")
+    assert_equal(String(lines[len(lines) - 1].split("|")[3].strip()), "1")
 
 
 def test_integral_values_above_float_precision_retain_every_digit() raises:
     var total = Count["events", CountUnit.Billion](UInt64.MAX)
     var out = _plain(Report[type_of(total)](total, []))
     assert_true(
-        out.startswith("events - total 18.446.744.073.709.551.615 G events\n\n")
+        out.startswith(
+            "events - total 18,446,744,073,709,551,615 Bil events\n\n"
+        )
     )
 
 
@@ -472,9 +516,9 @@ def test_report_table_columns_are_inspectable() raises:
     var table = Prof.report().tables()[0].copy()
     assert_equal(table.num_columns(), 9)
     assert_equal(table.column(0).header, "Zone")
-    assert_equal(table.column(3).header, "Inclusive (cycles)")
-    assert_equal(table.column(5).header, "Min. Inclusive (cycles)")
-    assert_equal(table.column(6).header, "Inclusive/Iter (cycles)")
+    assert_equal(table.column(3).header, "Inclusive")
+    assert_equal(table.column(5).header, "Min. Inclusive")
+    assert_equal(table.column(6).header, "Inclusive/Iter")
     assert_equal(table.column(7).header, "Inclusive (%)")
     assert_equal(table.column(8).header, "Exclusive (%)")
     assert_true(table.column(3).align == Align.Right)

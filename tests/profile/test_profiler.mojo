@@ -110,7 +110,7 @@ def test_single_zone_inclusive_equals_exclusive() raises:
     assert_true(table.find("tests/profile/test_profiler.mojo:") != -1)
     assert_true(table.find("only") != -1)
     assert_true(table.find("Inclusive (ns)") != -1)
-    assert_true(table.find("33,3%") != -1)
+    assert_true(table.find("33.3%") != -1)
 
 
 def test_nested_exclusive_subtracts_child() raises:
@@ -184,7 +184,7 @@ def test_reentry_aggregates() raises:
     assert_equal(rep.stats[0].inclusive.value, 3)  # 1 tick each
     var table = String(rep)
     assert_true(table.find("Inclusive/Iter (ns)") != -1)
-    assert_true(table.find("42,9%") != -1)
+    assert_true(table.find("42.9%") != -1)
 
 
 def test_deep_lifo_nesting() raises:

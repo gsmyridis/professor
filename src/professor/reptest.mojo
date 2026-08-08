@@ -1,7 +1,7 @@
 from std.sys import stdout
 from std.time import perf_counter_ns
 
-from .measure import Instrument
+from .measure import DataSizeUnit, Instrument, TimeUnit
 from .measure.instrument import (
     MetricComponent,
     _MetricInner,
@@ -287,9 +287,9 @@ def _component_header(field: MetricComponent) -> String:
     var name = field.name.copy() if field.name else String("Value")
     var unit: String
     if field.kind == MType.Time:
-        unit = "ns"
+        unit = TimeUnit.Nanos.symbol
     elif field.kind == MType.DataSize:
-        unit = "B"
+        unit = DataSizeUnit.Byte.symbol
     else:
         unit = field.count_kind.copy()
     if unit:

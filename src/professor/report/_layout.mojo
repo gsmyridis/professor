@@ -1,20 +1,28 @@
 """Materializes typed profiler results as one table per scalar component."""
 
-from std.math import floor, log10, pow, round
+from std.math import round
 from std.os.path import dirname
 from std.pathlib import cwd, Path
 from std.reflection import SourceLocation
 
+from professor.measure import (
+    CountUnit,
+    TimeUnit,
+    DataSizeUnit,
+)
 from professor.measure.instrument import (
-    MetricComponent,
     _MetricInner,
     MType,
+    MetricComponent,
 )
 
 from .format import ReportFormat
 from .stat import ZoneStatistics
 from .table import Align, Cell, Color, Column, Table, TableStyle
 
+comptime _THOUSAND_SEP = ","
+comptime _DECIMAL_SEP = "."
+comptime _MAX_DECIMALS = 9
 
 comptime _ZONE_LABEL = "Zone"
 comptime _SITE_LABEL = "Site"
@@ -40,8 +48,24 @@ comptime _MANIFESTS: InlineArray[StaticString, 3] = [
 
 @fieldwise_init
 struct _DisplayUnit(Copyable):
+    """The scale and header symbol one report column displays its values in."""
+
     var scale: UInt64
     var symbol: String
+
+    def __init__(out self, unit: TimeUnit):
+        self = Self(unit.scale, String(unit.symbol))
+
+    def __init__(out self, unit: DataSizeUnit):
+        self = Self(unit.scale, String(unit.symbol))
+
+    def __init__(out self, unit: CountUnit):
+        """Carries only the SI prefix, which is empty for individual events.
+
+        The event kind belongs to the whole table, so it is named once in the
+        title rather than repeated in every column header.
+        """
+        self = Self(unit.scale, String(unit.symbol))
 
 
 def zone_tables[
@@ -51,7 +75,6 @@ def zone_tables[
     stats: List[ZoneStatistics[M]],
     format: ReportFormat,
 ) raises -> List[Table]:
-    _validate_format(format)
     var total_components = total.components()
     var root = _project_root()
     var tables = List[Table](capacity=len(total_components))
@@ -72,24 +95,24 @@ def _component_table[
     format: ReportFormat,
 ) raises -> Table:
     ref total = total_components[index]
-    var tracks_data = _tracks_data(stats)
+    var tracks_data = _tracks_data_any(stats)
     var show_throughput = total.kind == MType.Time and tracks_data
 
     var inclusive_unit = _select_component_unit(
-        total, _component_column_max(stats, index, 0)
+        total, _column_max_inclusive(stats, index)
     )
     var exclusive_unit = _select_component_unit(
-        total, _component_column_max(stats, index, 1)
+        total, _column_max_exclusive(stats, index)
     )
     var minimum_unit = _select_component_unit(
-        total, _component_column_max(stats, index, 2)
+        total, _column_max_inclusive_min(stats, index)
     )
     var average_unit = _select_component_unit(
-        total, _component_column_max(stats, index, 3)
+        total, _column_max_inclusive_iter(stats, index)
     )
-    var data_unit = _select_data_unit(_processed_data_max(stats))
+    var data_unit = _select_data_unit(_column_max_processed_data(stats))
     var throughput_unit = _select_rate_unit(
-        _throughput_max(stats, index) if show_throughput else 0.0
+        _column_max_throughput(stats, index) if show_throughput else 0.0
     )
 
     var columns = [
@@ -150,7 +173,7 @@ def _component_table[
         var cells = [
             Cell(String(stat.name)),
             Cell(_format_site(stat.loc, root)),
-            Cell(_group_integer(UInt64(stat.count), format)),
+            Cell(_group_integer(UInt64(stat.count))),
             Cell(_format_component(inclusive, inclusive_unit, format)),
             Cell(_format_component(exclusive, exclusive_unit, format)),
             Cell(_format_component(inclusive_min, minimum_unit, format)),
@@ -160,6 +183,7 @@ def _component_table[
                 )
             ),
         ]
+
         if tracks_data:
             cells.append(Cell(_format_processed_data(stat, data_unit, format)))
         if show_throughput:
@@ -195,11 +219,17 @@ def _component_table[
 
 
 def _title(component: MetricComponent, format: ReportFormat) -> String:
+    """Names the whole table, and with it the event kind its columns count.
+
+    Every column of one table measures the same thing, so the kind is stated
+    here once; column headers carry only the SI prefix they scale by.
+    """
     var unit = _select_component_unit(component, component.canonical_value())
-    var value = _format_component(component, unit, format)
-    var quantity = value
+    var quantity = _format_component(component, unit, format)
     if unit.symbol:
         quantity += " " + unit.symbol
+    if component.count_kind:
+        quantity += " " + component.count_kind
     if component.name:
         return component.name + " - total " + quantity
     return "Program total: " + quantity
@@ -214,50 +244,50 @@ def _select_component_unit(
     component: MetricComponent, maximum: Float64
 ) -> _DisplayUnit:
     if component.kind == MType.Time:
-        if maximum >= 60_000_000_000.0:
-            return _DisplayUnit(60_000_000_000, "min")
-        if maximum >= 1_000_000_000.0:
-            return _DisplayUnit(1_000_000_000, "s")
-        if maximum >= 1_000_000.0:
-            return _DisplayUnit(1_000_000, "ms")
-        if maximum >= 1_000.0:
-            return _DisplayUnit(1_000, "us")
-        return _DisplayUnit(1, "ns")
+        return _select_time_unit(maximum)
     if component.kind == MType.DataSize:
         return _select_data_unit(maximum)
+    return _select_count_unit(maximum)
 
-    var suffix = component.count_kind.copy()
-    if maximum >= 1_000_000_000.0:
-        return _DisplayUnit(1_000_000_000, _count_symbol("G", suffix))
-    if maximum >= 1_000_000.0:
-        return _DisplayUnit(1_000_000, _count_symbol("M", suffix))
-    if maximum >= 1_000.0:
-        return _DisplayUnit(1_000, _count_symbol("k", suffix))
-    return _DisplayUnit(1, suffix^)
+
+def _select_count_unit(maximum: Float64) -> _DisplayUnit:
+    if maximum >= Float64(CountUnit.Billion.scale):
+        return _DisplayUnit(CountUnit.Billion)
+    if maximum >= Float64(CountUnit.Million.scale):
+        return _DisplayUnit(CountUnit.Million)
+    if maximum >= Float64(CountUnit.Thousand.scale):
+        return _DisplayUnit(CountUnit.Thousand)
+    return _DisplayUnit(CountUnit.Single)
+
+
+def _select_time_unit(maximum: Float64) -> _DisplayUnit:
+    if maximum >= Float64(TimeUnit.Minutes.scale):
+        return _DisplayUnit(TimeUnit.Minutes)
+    if maximum >= Float64(TimeUnit.Seconds.scale):
+        return _DisplayUnit(TimeUnit.Seconds)
+    if maximum >= Float64(TimeUnit.Millis.scale):
+        return _DisplayUnit(TimeUnit.Millis)
+    if maximum >= Float64(TimeUnit.Micros.scale):
+        return _DisplayUnit(TimeUnit.Micros)
+    return _DisplayUnit(TimeUnit.Nanos)
 
 
 def _select_data_unit(maximum: Float64) -> _DisplayUnit:
-    if maximum >= 1_000_000_000_000.0:
-        return _DisplayUnit(1_000_000_000_000, "TB")
-    if maximum >= 1_000_000_000.0:
-        return _DisplayUnit(1_000_000_000, "GB")
-    if maximum >= 1_000_000.0:
-        return _DisplayUnit(1_000_000, "MB")
-    if maximum >= 1_000.0:
-        return _DisplayUnit(1_000, "kB")
-    return _DisplayUnit(1, "B")
+    if maximum >= Float64(DataSizeUnit.Terabyte.scale):
+        return _DisplayUnit(DataSizeUnit.Terabyte)
+    if maximum >= Float64(DataSizeUnit.Gigabyte.scale):
+        return _DisplayUnit(DataSizeUnit.Gigabyte)
+    if maximum >= Float64(DataSizeUnit.Megabyte.scale):
+        return _DisplayUnit(DataSizeUnit.Megabyte)
+    if maximum >= Float64(DataSizeUnit.Kilobyte.scale):
+        return _DisplayUnit(DataSizeUnit.Kilobyte)
+    return _DisplayUnit(DataSizeUnit.Byte)
 
 
 def _select_rate_unit(maximum: Float64) -> _DisplayUnit:
     var unit = _select_data_unit(maximum)
     unit.symbol += "/s"
     return unit^
-
-
-def _count_symbol(prefix: String, kind: String) -> String:
-    if not kind:
-        return prefix
-    return prefix + " " + kind
 
 
 def _column_header(label: String, unit: String) -> String:
@@ -271,27 +301,49 @@ def _column_header(label: String, unit: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-def _component_column_max[
+def _column_max_inclusive[
     S: _MetricInner
-](stats: List[ZoneStatistics[S]], index: Int, column: Int) -> Float64:
+](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
     var maximum = 0.0
     for ref stat in stats:
-        var value: Float64
-        if column == 0:
-            value = stat.inclusive.components()[index].canonical_value()
-        elif column == 1:
-            value = stat.exclusive.components()[index].canonical_value()
-        elif column == 2:
-            value = stat.inclusive_min.components()[index].canonical_value()
-        else:
-            value = stat.inclusive.components()[
-                index
-            ].canonical_value() / Float64(stat.count)
+        var value = stat.inclusive.components()[index].canonical_value()
         maximum = max(maximum, value)
     return maximum
 
 
-def _processed_data_max[
+def _column_max_exclusive[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        var value = stat.exclusive.components()[index].canonical_value()
+        maximum = max(maximum, value)
+    return maximum
+
+
+def _column_max_inclusive_min[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        var value = stat.inclusive_min.components()[index].canonical_value()
+        maximum = max(maximum, value)
+    return maximum
+
+
+def _column_max_inclusive_iter[
+    S: _MetricInner
+](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
+    var maximum = 0.0
+    for ref stat in stats:
+        var value = stat.inclusive.components()[
+            index
+        ].canonical_value() / Float64(stat.count)
+        maximum = max(maximum, value)
+    return maximum
+
+
+def _column_max_processed_data[
     S: _MetricInner
 ](stats: List[ZoneStatistics[S]]) -> Float64:
     var maximum = 0.0
@@ -301,14 +353,7 @@ def _processed_data_max[
     return maximum
 
 
-def _tracks_data[S: _MetricInner](stats: List[ZoneStatistics[S]]) -> Bool:
-    for ref stat in stats:
-        if stat.processed_data:
-            return True
-    return False
-
-
-def _throughput_max[
+def _column_max_throughput[
     S: _MetricInner
 ](stats: List[ZoneStatistics[S]], index: Int) -> Float64:
     var maximum = 0.0
@@ -320,11 +365,19 @@ def _throughput_max[
             continue
         var rate = (
             Float64(stat.processed_data.value().value)
-            * 1_000_000_000.0
+            * Float64(TimeUnit.Seconds.scale)
             / elapsed
         )
         maximum = max(maximum, rate)
     return maximum
+
+
+def _tracks_data_any[S: _MetricInner](stats: List[ZoneStatistics[S]]) -> Bool:
+    """Checks if any zone tracks processed-data statistics."""
+    for ref stat in stats:
+        if stat.processed_data:
+            return True
+    return False
 
 
 def _format_processed_data[
@@ -349,7 +402,7 @@ def _format_throughput[
         return "N/A"
     var bytes_per_second = (
         Float64(stat.processed_data.value().value)
-        * 1_000_000_000.0
+        * Float64(TimeUnit.Seconds.scale)
         / elapsed_nanos
     )
     return _format_number(bytes_per_second / Float64(unit.scale), format)
@@ -360,25 +413,7 @@ def _format_throughput[
 # ===----------------------------------------------------------------------=== #
 
 
-def _validate_format(format: ReportFormat) raises:
-    if format.thousands_separator().byte_length() != 1:
-        raise Error("thousands_separator must be one UTF-8 byte")
-    if format.decimal_separator().byte_length() != 1:
-        raise Error("decimal_separator must be one UTF-8 byte")
-    if format.thousands_separator() == format.decimal_separator():
-        raise Error("thousands and decimal separators must differ")
-    if format.maximum_decimals() < 0 or format.maximum_decimals() > 9:
-        raise Error("maximum_decimals must be between 0 and 9")
-
-
-def _power_of_ten(exponent: Int) -> UInt64:
-    var result = UInt64(1)
-    for _ in range(exponent):
-        result *= 10
-    return result
-
-
-def _group_integer(value: UInt64, format: ReportFormat) -> String:
+def _group_integer(value: UInt64) -> String:
     if value == 0:
         return "0"
     var remaining = value
@@ -386,7 +421,7 @@ def _group_integer(value: UInt64, format: ReportFormat) -> String:
     var digits = 0
     while remaining > 0:
         if digits > 0 and digits % 3 == 0:
-            result = format.thousands_separator() + result
+            result = _THOUSAND_SEP + result
         result = String(remaining % 10) + result
         remaining //= 10
         digits += 1
@@ -394,29 +429,28 @@ def _group_integer(value: UInt64, format: ReportFormat) -> String:
 
 
 def _format_number(value: Float64, format: ReportFormat) -> String:
-    var factor = _power_of_ten(format.maximum_decimals())
+    """Writes `value` with at most `format.maximum_decimals()` decimals.
+
+    Trailing fractional zeros are dropped, so a value below the last retained
+    digit renders as `0`. The requested decimals are clamped to
+    `[0, _MAX_DECIMALS]` rather than rejected.
+    """
+    var decimals = min(max(format.maximum_decimals(), 0), _MAX_DECIMALS)
+    var factor = UInt64(10) ** decimals
     var scaled_float = round(value * Float64(factor))
-    if value > 0.0 and scaled_float == 0.0:
-        return _format_scientific(value, format)
-    if scaled_float > Float64(UInt64.MAX):
-        return _format_scientific(value, format)
+    var scaled = (
+        UInt64(scaled_float) if scaled_float
+        < Float64(UInt64.MAX) else UInt64.MAX
+    )
 
-    var scaled = UInt64(scaled_float)
-    var whole = scaled // factor
-    var fraction = scaled % factor
-    var decimals = format.maximum_decimals()
-    while decimals > 0 and fraction % 10 == 0:
-        fraction //= 10
-        decimals -= 1
+    var fraction = String(scaled % factor)
+    while fraction.byte_length() < decimals:
+        fraction = "0" + fraction
 
-    var result = _group_integer(whole, format)
-    if decimals == 0:
-        return result^
-
-    var fraction_text = String(fraction)
-    while fraction_text.byte_length() < decimals:
-        fraction_text = "0" + fraction_text
-    result += format.decimal_separator() + fraction_text
+    var result = _group_integer(scaled // factor)
+    var digits = fraction.rstrip("0")
+    if digits:
+        result += _DECIMAL_SEP + String(digits)
     return result^
 
 
@@ -439,27 +473,16 @@ def _format_scaled_integer(
     if storage_scale >= display_scale:
         var multiplier = storage_scale // display_scale
         if value <= UInt64.MAX // multiplier:
-            return _group_integer(value * multiplier, format)
+            return _group_integer(value * multiplier)
     else:
         var divisor = display_scale // storage_scale
         if value % divisor == 0:
-            return _group_integer(value // divisor, format)
+            return _group_integer(value // divisor)
 
     return _format_number(
         Float64(value) * Float64(storage_scale) / Float64(display_scale),
         format,
     )
-
-
-def _format_scientific(value: Float64, format: ReportFormat) -> String:
-    if value == 0.0:
-        return "0"
-    var exponent = Int(floor(log10(value)))
-    var mantissa = value / pow(10.0, exponent)
-    var scientific_format = ReportFormat(
-        format.thousands_separator(), format.decimal_separator(), 2
-    )
-    return _format_number(mantissa, scientific_format) + "e" + String(exponent)
 
 
 def _percent_value(part: Float64, total: Float64) -> Optional[Float64]:
@@ -472,9 +495,7 @@ def _format_percent(percent: Optional[Float64], format: ReportFormat) -> String:
     if not percent:
         return "N/A"
     var decimals = min(format.maximum_decimals(), 1)
-    var percent_format = ReportFormat(
-        format.thousands_separator(), format.decimal_separator(), decimals
-    )
+    var percent_format = ReportFormat(max_decimals=decimals)
     return _format_number(percent.value(), percent_format) + "%"
 
 

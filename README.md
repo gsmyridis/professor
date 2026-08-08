@@ -323,14 +323,15 @@ counter ticks distinct from PMU cycles.
 
 Storage units do not force display units. Each numeric report column chooses
 one display unit from its complete set of values, using decimal SI prefixes for
-data sizes and throughput. Units appear in column headers. By default numbers
-use `.` for thousands, `,` for decimals, and at most three fractional digits.
-Choose a different immutable report format when constructing the report:
+data sizes and throughput. Units appear in column headers. Numbers group
+thousands with `,`, separate decimals with `.`, and keep at most two
+fractional digits. Choose a different decimal count when constructing the
+report:
 
 ```mojo
 from professor import ReportFormat
 
-var report = Prof.report(ReportFormat(",", ".", 2))
+var report = Prof.report(ReportFormat(max_decimals=3))
 ```
 
 A metric with one component yields exactly one table. Anonymous time and data
