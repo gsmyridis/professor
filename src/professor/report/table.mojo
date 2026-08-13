@@ -405,6 +405,39 @@ struct Table(Copyable, Writable):
             )
         writer.write("\n")
 
+    # ===------------------------------------------------------------------=== #
+    # CSV serialization
+    # ===------------------------------------------------------------------=== #
+
+    def write_csv_to(
+        self, mut writer: Some[Writer], *, separator: String = ","
+    ):
+        """Writes the table as CSV to `writer`.
+
+        CSV contains column headers and cell text. Terminal-only presentation
+        such as the title, rules, blank rows, alignment, and color is omitted.
+        Fields are quoted when required and embedded quotes are doubled.
+        """
+        for column_index in range(len(self._columns)):
+            if column_index > 0:
+                writer.write(separator)
+            _write_csv_field(
+                writer, self._columns[column_index].header, separator
+            )
+        writer.write("\r\n")
+
+        for ref row in self._rows:
+            if row.is_rule or row.is_blank():
+                continue
+
+            for column_index in range(len(self._columns)):
+                if column_index > 0:
+                    writer.write(separator)
+                _write_csv_field(
+                    writer, row.cells[column_index].text, separator
+                )
+            writer.write("\r\n")
+
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
@@ -427,6 +460,21 @@ def _display_width(text: StringSlice) -> Int:
     (CJK) and combining characters are still counted as one.
     """
     return text.count_codepoints()
+
+
+def _write_csv_field(
+    mut writer: Some[Writer], text: StringSlice, separator: StringSlice
+):
+    var needs_quotes = (
+        text.find(separator) != -1
+        or text.find('"') != -1
+        or text.find("\r") != -1
+        or text.find("\n") != -1
+    )
+    if needs_quotes:
+        writer.write('"', text.replace('"', '""'), '"')
+    else:
+        writer.write(text)
 
 
 def _write_padded(

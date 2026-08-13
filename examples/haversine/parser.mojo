@@ -7,13 +7,16 @@ the implementation follows the Rust `Token` -> `Tokenizer` -> `Value` ->
 """
 
 from std.memory import OwnedPointer
-
-from professor import GlobalProfiler, WallClock
-
-
-comptime HaversineProfiler = GlobalProfiler[
-    WallClock, Tag="haversine.parser", Capacity=10
-]
+from prof import (
+    Profiler,
+    TOKENISER,
+    PARSE,
+    PARSE_VALUE,
+    PARSE_INPUT,
+    PARSE_STRING,
+    PARSE_NUMBER,
+    STRING,
+)
 
 
 @fieldwise_init
@@ -53,9 +56,10 @@ struct Token(Movable):
 
     @staticmethod
     def string(var value: String) -> Self:
-        var token = Self(TokenKind.String)
-        token.string_value = value^
-        return token^
+        with Profiler.zone["string", STRING]():
+            var token = Self(TokenKind.String)
+            token.string_value = value^
+            return token^
 
     @staticmethod
     def number(value: Float64) -> Self:
@@ -89,40 +93,41 @@ struct Tokenizer:
         self._cursor = 0
 
     def next_token(mut self) raises -> Token:
-        self._eat_whitespace()
-        if self._cursor == len(self._input):
-            return Token(TokenKind.Eof)
+        with Profiler.zone["next_token", TOKENISER]():
+            self._eat_whitespace()
+            if self._cursor == len(self._input):
+                return Token(TokenKind.Eof)
 
-        var byte = self._input[self._cursor]
-        self._cursor += 1
+            var byte = self._input[self._cursor]
+            self._cursor += 1
 
-        if byte == Byte(ord("[")):
-            return Token(TokenKind.OpenBracket)
-        if byte == Byte(ord("]")):
-            return Token(TokenKind.CloseBracket)
-        if byte == Byte(ord("{")):
-            return Token(TokenKind.OpenBrace)
-        if byte == Byte(ord("}")):
-            return Token(TokenKind.CloseBrace)
-        if byte == Byte(ord(",")):
-            return Token(TokenKind.Comma)
-        if byte == Byte(ord(":")):
-            return Token(TokenKind.Colon)
-        if byte == Byte(ord("n")):
-            self._expect_remainder("ull")
-            return Token(TokenKind.Null)
-        if byte == Byte(ord("t")):
-            self._expect_remainder("rue")
-            return Token.boolean(True)
-        if byte == Byte(ord("f")):
-            self._expect_remainder("alse")
-            return Token.boolean(False)
-        if byte == Byte(ord('"')):
-            return Token.string(self._next_string())
-        if byte == Byte(ord("-")) or _is_digit(byte):
-            return Token.number(self._next_number(self._cursor - 1))
+            if byte == Byte(ord("[")):
+                return Token(TokenKind.OpenBracket)
+            if byte == Byte(ord("]")):
+                return Token(TokenKind.CloseBracket)
+            if byte == Byte(ord("{")):
+                return Token(TokenKind.OpenBrace)
+            if byte == Byte(ord("}")):
+                return Token(TokenKind.CloseBrace)
+            if byte == Byte(ord(",")):
+                return Token(TokenKind.Comma)
+            if byte == Byte(ord(":")):
+                return Token(TokenKind.Colon)
+            if byte == Byte(ord("n")):
+                self._expect_remainder("ull")
+                return Token(TokenKind.Null)
+            if byte == Byte(ord("t")):
+                self._expect_remainder("rue")
+                return Token.boolean(True)
+            if byte == Byte(ord("f")):
+                self._expect_remainder("alse")
+                return Token.boolean(False)
+            if byte == Byte(ord('"')):
+                return Token.string(self._next_string())
+            if byte == Byte(ord("-")) or _is_digit(byte):
+                return Token.number(self._next_number(self._cursor - 1))
 
-        raise Error("unexpected character at byte ", self._cursor - 1)
+            raise Error("unexpected character at byte ", self._cursor - 1)
 
     def peek_next(mut self) raises -> Token:
         var saved_cursor = self._cursor
@@ -136,6 +141,7 @@ struct Tokenizer:
 
     def _expect_remainder(mut self, expected: StringSlice) raises:
         var expected_bytes = expected.as_bytes()
+        # TODO: Change this to check the span immediately and report a single message
         if self._cursor + len(expected_bytes) > len(self._input):
             raise Error("reached EOF while reading JSON literal")
         for i in range(len(expected_bytes)):
@@ -144,7 +150,7 @@ struct Tokenizer:
         self._cursor += len(expected_bytes)
 
     def _next_string(mut self) raises -> String:
-        with HaversineProfiler.zone["parse_string"]():
+        with Profiler.zone["parse_string", PARSE_STRING]():
             var start = self._cursor
             while self._cursor < len(self._input):
                 var byte = self._input[self._cursor]
@@ -164,7 +170,7 @@ struct Tokenizer:
             raise Error("reached EOF while reading JSON string")
 
     def _next_number(mut self, start: Int) raises -> Float64:
-        with HaversineProfiler.zone["parse_number"]():
+        with Profiler.zone["parse_number", PARSE_NUMBER]():
             self._cursor = start
 
             if self._consume(Byte(ord("-"))):
@@ -323,7 +329,7 @@ struct Parser[profile: Bool = False]:
             return self._parse()
 
     def _parse_profiled(mut self) raises -> Optional[Value]:
-        var zone = HaversineProfiler.zone["parse", 2]()
+        var zone = Profiler.zone["parse", PARSE]()
         var result: Optional[Value]
         try:
             result = self._parse()
@@ -347,7 +353,7 @@ struct Parser[profile: Bool = False]:
             return self._parse_value()
 
     def _parse_value_profiled(mut self) raises -> Optional[Value]:
-        var zone = HaversineProfiler.zone["parse_value", 3]()
+        var zone = Profiler.zone["parse_value", PARSE_VALUE]()
         var result: Optional[Value]
         try:
             result = self._parse_value()
@@ -463,7 +469,7 @@ def parse_json(input: StringSlice) raises -> Optional[Value]:
 
 def parse_json_profiled(input: StringSlice) raises -> Optional[Value]:
     """Parses JSON with `parse` and every `parse_value` call profiled."""
-    var zone = HaversineProfiler.zone["parse input"](
+    var zone = Profiler.zone["parse input", PARSE_INPUT](
         bytes=UInt64(input.byte_length())
     )
     var parser = Parser[profile=True](input)

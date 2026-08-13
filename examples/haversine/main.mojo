@@ -1,15 +1,14 @@
 from std.math import asin, cos, pi, sin, sqrt
 from std.pathlib import Path
-from std.sys import argv
+from std.sys import argv, stdout
 
-from professor import WallClock
-
+from prof import Profiler, HAVERSINE, COMPUTE
 from parser import (
-    HaversineProfiler,
     Value,
     ValueKind,
     parse_json_profiled,
 )
+from professor import ReportFormat, ReportColumn
 
 
 def degrees_to_radians(angle: Float64) -> Float64:
@@ -23,7 +22,7 @@ def calculate_haversine_distance(
     phi_1_degrees: Float64,
     theta_1_degrees: Float64,
 ) -> Float64:
-    var zone = HaversineProfiler.zone["haversine"]()
+    var zone = Profiler.zone["haversine", HAVERSINE]()
     var phi_0 = degrees_to_radians(phi_0_degrees)
     var phi_1 = degrees_to_radians(phi_1_degrees)
     var theta_0 = degrees_to_radians(theta_0_degrees)
@@ -66,7 +65,7 @@ def _compute_average(pairs: Value, radius: Float64) raises -> Float64:
 
 
 def compute_average(pairs: Value, radius: Float64) raises -> Float64:
-    var zone = HaversineProfiler.zone["compute"]()
+    var zone = Profiler.zone["compute", COMPUTE]()
     var result: Float64
     try:
         result = _compute_average(pairs, radius)
@@ -86,7 +85,7 @@ def main() raises:
         )
         return
 
-    HaversineProfiler.start()
+    Profiler.start()
     var input = Path(args[1]).read_text()
     var parsed = parse_json_profiled(input)
     if not parsed:
@@ -104,7 +103,7 @@ def main() raises:
         raise Error("JSON member 'pairs' must be an array")
 
     var computed_average = compute_average(pairs, radius)
-    HaversineProfiler.end()
+    Profiler.end()
 
     print("Number of pairs:", len(pairs.array_value))
     print("Radius:", radius)
@@ -113,4 +112,7 @@ def main() raises:
         average_distance - computed_average,
     )
     print("\nProfile:")
-    print(HaversineProfiler.report())
+    var format = ReportFormat(
+        columns=[ReportColumn.Zone, ReportColumn.InclusivePercentage]
+    )
+    print(Profiler.report(format^))

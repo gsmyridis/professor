@@ -15,4 +15,4 @@ from .measure import (
     TimeUnit,
     WallClock,
 )
-from .report import Report, ReportFormat
+from .report import Report, ReportFormat, ReportColumn

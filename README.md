@@ -334,6 +334,33 @@ from professor import ReportFormat
 var report = Prof.report(ReportFormat(max_decimals=3))
 ```
 
+Choose and order the table columns by passing an explicit list. `Zone` must
+appear exactly once because it identifies the measurement represented by each
+row; duplicate columns and lists without `Zone` are rejected when the report is
+built:
+
+```mojo
+from professor import ReportColumn, ReportFormat
+
+var report = Prof.report(
+    ReportFormat(
+        columns=[
+            ReportColumn.Zone,
+            ReportColumn.Count,
+            ReportColumn.Inclusive,
+            ReportColumn.InclusivePercentage,
+        ]
+    )
+)
+```
+
+The supplied order is the display order and selection affects both terminal
+and CSV tables without removing data from `Report.stats`. Omitting `columns`
+retains the default report. An explicit empty list is invalid. Processed data
+is omitted when no zone records a workload; throughput is additionally omitted
+from non-time metric tables. The remaining requested columns keep their
+relative order.
+
 A metric with one component yields exactly one table. Anonymous time and data
 scalars use `Program total:`; a scalar `Count` uses its event kind as the table
 identity.
@@ -350,6 +377,14 @@ from professor.report.table import ColorMode
 var tables = Prof.report().tables()
 tables[0].style.color = ColorMode.Never
 print(tables[0])
+```
+
+Write a table as CSV by supplying its destination. The caller owns file
+creation and lifetime:
+
+```mojo
+with open("profile.csv", "w") as file:
+    tables[0].write_csv_to(file)
 ```
 
 ### Custom instruments

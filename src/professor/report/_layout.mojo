@@ -16,25 +16,13 @@ from professor.measure.instrument import (
     MetricComponent,
 )
 
-from .format import ReportFormat
+from .format import ReportFormat, ReportColumn as Col
 from .stat import ZoneStatistics
 from .table import Align, Cell, Color, Column, Table, TableStyle
 
 comptime _THOUSAND_SEP = ","
 comptime _DECIMAL_SEP = "."
 comptime _MAX_DECIMALS = 9
-
-comptime _ZONE_LABEL = "Zone"
-comptime _SITE_LABEL = "Site"
-comptime _COUNT_LABEL = "Count"
-comptime _INCLUSIVE_LABEL = "Inclusive"
-comptime _EXCLUSIVE_LABEL = "Exclusive"
-comptime _INCLUSIVE_MIN_LABEL = "Min. Inclusive"
-comptime _INCLUSIVE_PER_ITER_LABEL = "Inclusive/Iter"
-comptime _PROCESSED_DATA_LABEL = "Processed Data"
-comptime _THROUGHPUT_LABEL = "Throughput"
-comptime _INCLUSIVE_PERCENT_LABEL = "Inclusive (%)"
-comptime _EXCLUSIVE_PERCENT_LABEL = "Exclusive (%)"
 
 comptime _HOT_PERCENT = 50.0
 comptime _WARM_PERCENT = 20.0
@@ -94,6 +82,14 @@ def _component_table[
     root: String,
     format: ReportFormat,
 ) raises -> Table:
+    """
+    Args:
+        index: Index of scalar metric component in composite metric.
+    """
+
+    # ===-------------------------------------------------------------------===
+    # Deduce the inits for each column
+    # ===-------------------------------------------------------------------===
     ref total = total_components[index]
     var tracks_data = _tracks_data_any(stats)
     var show_throughput = total.kind == MType.Time and tracks_data
@@ -115,43 +111,67 @@ def _component_table[
         _column_max_throughput(stats, index) if show_throughput else 0.0
     )
 
-    var columns = [
-        Column(_ZONE_LABEL),
-        Column(_SITE_LABEL),
-        Column(_COUNT_LABEL, align=Align.Right),
-        Column(
-            _column_header(_INCLUSIVE_LABEL, inclusive_unit.symbol),
-            align=Align.Right,
-        ),
-        Column(
-            _column_header(_EXCLUSIVE_LABEL, exclusive_unit.symbol),
-            align=Align.Right,
-        ),
-        Column(
-            _column_header(_INCLUSIVE_MIN_LABEL, minimum_unit.symbol),
-            align=Align.Right,
-        ),
-        Column(
-            _column_header(_INCLUSIVE_PER_ITER_LABEL, average_unit.symbol),
-            align=Align.Right,
-        ),
-    ]
-    if tracks_data:
-        columns.append(
-            Column(
-                _column_header(_PROCESSED_DATA_LABEL, data_unit.symbol),
-                align=Align.Right,
+    # ===-------------------------------------------------------------------===
+    # Build columns
+    # ===-------------------------------------------------------------------===
+    var selected_columns = _applicable_columns(
+        format, tracks_data, show_throughput
+    )
+    var columns = List[Column](capacity=len(selected_columns))
+    for column in selected_columns:
+        if column == Col.Zone or column == Col.Site:
+            columns.append(Column(column.name()))
+        elif column == Col.Count:
+            columns.append(Column(column.name(), align=Align.Right))
+        elif column == Col.Inclusive:
+            columns.append(
+                Column(
+                    _column_header(column.name(), inclusive_unit.symbol),
+                    align=Align.Right,
+                )
             )
-        )
-    if show_throughput:
-        columns.append(
-            Column(
-                _column_header(_THROUGHPUT_LABEL, throughput_unit.symbol),
-                align=Align.Right,
+        elif column == Col.Exclusive:
+            columns.append(
+                Column(
+                    _column_header(column.name(), exclusive_unit.symbol),
+                    align=Align.Right,
+                )
             )
-        )
-    columns.append(Column(_INCLUSIVE_PERCENT_LABEL, align=Align.Right))
-    columns.append(Column(_EXCLUSIVE_PERCENT_LABEL, align=Align.Right))
+        elif column == Col.InclusiveMin:
+            columns.append(
+                Column(
+                    _column_header(column.name(), minimum_unit.symbol),
+                    align=Align.Right,
+                )
+            )
+        elif column == Col.InclusiveAverage:
+            columns.append(
+                Column(
+                    _column_header(column.name(), average_unit.symbol),
+                    align=Align.Right,
+                )
+            )
+        elif column == Col.ProcessedData:
+            columns.append(
+                Column(
+                    _column_header(column.name(), data_unit.symbol),
+                    align=Align.Right,
+                )
+            )
+        elif column == Col.Throughput:
+            columns.append(
+                Column(
+                    _column_header(column.name(), throughput_unit.symbol),
+                    align=Align.Right,
+                )
+            )
+        elif (
+            column == Col.InclusivePercentage
+            or column == Col.ExclusivePercentage
+        ):
+            columns.append(Column(column.name(), align=Align.Right))
+        else:
+            raise Error("unsupported report column: ", column)
 
     var table = Table(
         _title(total, format),
@@ -159,6 +179,9 @@ def _component_table[
         TableStyle(),
     )
 
+    # ===-------------------------------------------------------------------===
+    # Fill in the table
+    # ===-------------------------------------------------------------------===
     for ref stat in stats:
         var inclusive = stat.inclusive.components()[index].copy()
         var exclusive = stat.exclusive.components()[index].copy()
@@ -170,52 +193,89 @@ def _component_table[
 
         var incl_percent = _percent_value(inclusive_value, total_value)
         var excl_percent = _percent_value(exclusive_value, total_value)
-        var cells = [
-            Cell(String(stat.name)),
-            Cell(_format_site(stat.loc, root)),
-            Cell(_group_integer(UInt64(stat.count))),
-            Cell(_format_component(inclusive, inclusive_unit, format)),
-            Cell(_format_component(exclusive, exclusive_unit, format)),
-            Cell(_format_component(inclusive_min, minimum_unit, format)),
-            Cell(
-                _format_number(
-                    average_value / Float64(average_unit.scale), format
+        var cells = List[Cell](capacity=len(selected_columns))
+        for column in selected_columns:
+            if column == Col.Zone:
+                cells.append(Cell(String(stat.name)))
+            elif column == Col.Site:
+                cells.append(Cell(_format_site(stat.loc, root)))
+            elif column == Col.Count:
+                cells.append(Cell(_group_integer(UInt64(stat.count))))
+            elif column == Col.Inclusive:
+                cells.append(
+                    Cell(_format_component(inclusive, inclusive_unit, format))
                 )
-            ),
-        ]
-
-        if tracks_data:
-            cells.append(Cell(_format_processed_data(stat, data_unit, format)))
-        if show_throughput:
-            cells.append(
-                Cell(
-                    _format_throughput(
-                        stat, inclusive_value, throughput_unit, format
+            elif column == Col.Exclusive:
+                cells.append(
+                    Cell(_format_component(exclusive, exclusive_unit, format))
+                )
+            elif column == Col.InclusiveMin:
+                cells.append(
+                    Cell(_format_component(inclusive_min, minimum_unit, format))
+                )
+            elif column == Col.InclusiveAverage:
+                cells.append(
+                    Cell(
+                        _format_number(
+                            average_value / Float64(average_unit.scale), format
+                        )
                     )
                 )
-            )
-        cells.append(
-            Cell(
-                _format_percent(incl_percent, format),
-                color=_percent_color(incl_percent),
-            )
-        )
-        cells.append(
-            Cell(
-                _format_percent(excl_percent, format),
-                color=_percent_color(excl_percent),
-            )
-        )
+            elif column == Col.ProcessedData:
+                cells.append(
+                    Cell(_format_processed_data(stat, data_unit, format))
+                )
+            elif column == Col.Throughput:
+                cells.append(
+                    Cell(
+                        _format_throughput(
+                            stat, inclusive_value, throughput_unit, format
+                        )
+                    )
+                )
+            elif column == Col.InclusivePercentage:
+                cells.append(
+                    Cell(
+                        _format_percent(incl_percent, format),
+                        color=_percent_color(incl_percent),
+                    )
+                )
+            elif column == Col.ExclusivePercentage:
+                cells.append(
+                    Cell(
+                        _format_percent(excl_percent, format),
+                        color=_percent_color(excl_percent),
+                    )
+                )
+            else:
+                raise Error("unsupported report column: ", column)
         table.add_row(cells^)
 
     if len(stats) == 0:
         var cells = List[Cell](capacity=table.num_columns())
-        cells.append(Cell("(no zones recorded)"))
-        for _ in range(table.num_columns() - 1):
-            cells.append(Cell(String()))
+        for column in selected_columns:
+            if column == Col.Zone:
+                cells.append(Cell("(no zones recorded)"))
+            else:
+                cells.append(Cell(String()))
         table.add_row(cells^)
 
     return table^
+
+
+def _applicable_columns(
+    format: ReportFormat, tracks_data: Bool, show_throughput: Bool
+) raises -> List[Col]:
+    """Projects the requested order onto columns applicable to one table."""
+    var requested = format._validated_columns()
+    var selected = List[Col](capacity=len(requested))
+    for column in requested:
+        if column == Col.ProcessedData and not tracks_data:
+            continue
+        if column == Col.Throughput and not show_throughput:
+            continue
+        selected.append(column)
+    return selected^
 
 
 def _title(component: MetricComponent, format: ReportFormat) -> String:
