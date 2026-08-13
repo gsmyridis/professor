@@ -1,5 +1,5 @@
 from std.reflection import SourceLocation
-from std.testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 from professor import (
     Count,
@@ -10,6 +10,7 @@ from professor import (
     Metric,
     Nanos,
     Report,
+    ReportColumn,
     ReportFormat,
     Time,
     TimeUnit,
@@ -418,7 +419,7 @@ def test_scaled_count_column_shows_only_the_si_prefix() raises:
     var table = report.tables()[0].copy()
     assert_equal(table.title, "instructions - total 2 k instructions")
     assert_equal(table.column(3).header, "Inclusive (k)")
-    assert_equal(table.column(6).header, "Inclusive/Iter (k)")
+    assert_equal(table.column(6).header, "Inclusive / Iter. (k)")
 
 
 def test_maximum_decimals_is_report_owned() raises:
@@ -517,11 +518,130 @@ def test_report_table_columns_are_inspectable() raises:
     assert_equal(table.num_columns(), 9)
     assert_equal(table.column(0).header, "Zone")
     assert_equal(table.column(3).header, "Inclusive")
-    assert_equal(table.column(5).header, "Min. Inclusive")
-    assert_equal(table.column(6).header, "Inclusive/Iter")
+    assert_equal(table.column(5).header, "Inclusive Min.")
+    assert_equal(table.column(6).header, "Inclusive / Iter.")
     assert_equal(table.column(7).header, "Inclusive (%)")
     assert_equal(table.column(8).header, "Exclusive (%)")
     assert_true(table.column(3).align == Align.Right)
+
+
+def test_selected_columns_render_in_requested_order() raises:
+    var stats = [
+        ZoneStatistics[Nanos](
+            "work", _loc(), 2, Nanos(4), Nanos(2), Nanos(1), None
+        )
+    ]
+    var report = Report[Nanos](
+        Nanos(10),
+        stats^,
+        ReportFormat(
+            columns=[
+                ReportColumn.ExclusivePercentage,
+                ReportColumn.Zone,
+                ReportColumn.Inclusive,
+            ]
+        ),
+    )
+    var table = report.tables()[0].copy()
+    assert_equal(table.num_columns(), 3)
+    assert_equal(table.column(0).header, "Exclusive (%)")
+    assert_equal(table.column(1).header, "Zone")
+    assert_equal(table.column(2).header, "Inclusive (ns)")
+
+    table.style.color = ColorMode.Never
+    table.style.gap = "|"
+    var lines = String(table).splitlines()
+    var cells = lines[len(lines) - 1].split("|")
+    assert_equal(String(cells[0].strip()), "20%")
+    assert_equal(String(cells[1].strip()), "work")
+    assert_equal(String(cells[2].strip()), "4")
+
+    # Column selection changes presentation, not the retained measurements.
+    assert_equal(report.stats[0].inclusive.value, 4)
+    assert_equal(report.stats[0].exclusive.value, 2)
+
+
+def test_column_selection_requires_zone_exactly_once() raises:
+    with assert_raises(contains="contain Zone exactly once"):
+        _ = Report[Nanos](
+            Nanos(0),
+            [],
+            ReportFormat(columns=[ReportColumn.Count]),
+        )
+
+    with assert_raises(contains="contain Zone exactly once"):
+        _ = Report[Nanos](Nanos(0), [], ReportFormat(columns=[]))
+
+
+def test_column_selection_rejects_duplicates() raises:
+    with assert_raises(contains="duplicate report column: Count"):
+        _ = Report[Nanos](
+            Nanos(0),
+            [],
+            ReportFormat(
+                columns=[
+                    ReportColumn.Zone,
+                    ReportColumn.Count,
+                    ReportColumn.Count,
+                ]
+            ),
+        )
+
+
+def test_each_table_omits_requested_columns_that_do_not_apply() raises:
+    comptime Prof = GlobalProfiler[
+        TimedFaultTicker, Tag="test.report.selected-throughput"
+    ]
+
+    Prof.start()
+    with Prof.zone["work"](bytes=UInt64(2_000)):
+        pass
+    Prof.end()
+
+    var tables = Prof.report(
+        ReportFormat(
+            columns=[
+                ReportColumn.Throughput,
+                ReportColumn.Zone,
+                ReportColumn.ProcessedData,
+                ReportColumn.Count,
+            ]
+        )
+    ).tables()
+
+    assert_equal(tables[0].num_columns(), 4)
+    assert_true(tables[0].column(0).header.startswith("Throughput"))
+    assert_equal(tables[0].column(1).header, "Zone")
+    assert_true(tables[0].column(2).header.startswith("Processed Data"))
+    assert_equal(tables[0].column(3).header, "Count")
+
+    # Count components have no meaningful throughput column. The remaining
+    # requested columns retain their relative order.
+    assert_equal(tables[1].num_columns(), 3)
+    assert_equal(tables[1].column(0).header, "Zone")
+    assert_true(tables[1].column(1).header.startswith("Processed Data"))
+    assert_equal(tables[1].column(2).header, "Count")
+
+
+def test_empty_report_message_follows_the_zone_column() raises:
+    var table = (
+        Report[Nanos](
+            Nanos(0),
+            [],
+            ReportFormat(columns=[ReportColumn.Count, ReportColumn.Zone]),
+        )
+        .tables()[0]
+        .copy()
+    )
+    table.style.color = ColorMode.Never
+    table.style.gap = "|"
+
+    assert_equal(table.column(0).header, "Count")
+    assert_equal(table.column(1).header, "Zone")
+    var lines = String(table).splitlines()
+    var cells = lines[len(lines) - 1].split("|")
+    assert_equal(String(cells[0].strip()), "")
+    assert_equal(String(cells[1].strip()), "(no zones recorded)")
 
 
 def test_empty_report_says_so() raises:

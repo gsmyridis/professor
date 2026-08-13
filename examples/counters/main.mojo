@@ -36,6 +36,7 @@ from professor import (
     Instrument,
     Metric,
     Nanos,
+    ReportFormat,
 )
 from professor.os.apple import PortableEvent, Sampler, ThreadSampler
 
@@ -185,4 +186,5 @@ def main() raises:
     Prof.end()
 
     print("result:", total)
+    var format = ReportFormat(decimals=3)
     print(Prof.report())

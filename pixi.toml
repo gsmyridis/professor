@@ -30,6 +30,7 @@ test-profile-disabled = "mojo run -I src tests/profile/test_disabled.mojo"
 
 test-report = """
     mojo run -I src tests/report/test_table.mojo \
+    && mojo run -I src tests/report/test_csv.mojo \
     && mojo run -D PROFESSOR_PROFILE -I src tests/report/test_report.mojo
 """
 
