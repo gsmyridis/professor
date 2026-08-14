@@ -25,7 +25,7 @@ struct Sampler(Movable):
         self._released = False
         force_all_ctrs_set(1)
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         if not self._released:
             # Global counting is shared kernel state. Clearing it here would
             # stop other samplers/threads that did not create this lease.

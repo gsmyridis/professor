@@ -306,20 +306,22 @@ def test_multiple_time_fields_each_receive_throughput() raises:
 
 
 def test_ordinary_rows_show_na_when_any_site_has_workload() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "ordinary", _loc(), 1, Nanos(1), Nanos(1), Nanos(1), None
-        ),
-        ZoneStatistics[Nanos](
-            "work",
-            _loc(),
-            1,
-            Nanos(1),
-            Nanos(1),
-            Nanos(1),
-            DataSize[](10),
-        ),
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "ordinary", _loc(), 1, Nanos(1), Nanos(1), Nanos(1), None
+            ),
+            ZoneStatistics[Nanos](
+                "work",
+                _loc(),
+                1,
+                Nanos(1),
+                Nanos(1),
+                Nanos(1),
+                DataSize[](10),
+            ),
+        ]
+    )
     var table = Report[Nanos](Nanos(2), stats^).tables()[0].copy()
     table.style.color = ColorMode.Never
     table.style.gap = "|"
@@ -330,35 +332,37 @@ def test_ordinary_rows_show_na_when_any_site_has_workload() raises:
 
 
 def test_zero_elapsed_is_na_and_zero_bytes_is_zero_rate() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "zero-time",
-            _loc(),
-            1,
-            Nanos(0),
-            Nanos(0),
-            Nanos(0),
-            DataSize[](5),
-        ),
-        ZoneStatistics[Nanos](
-            "zero-bytes",
-            _loc(),
-            1,
-            Nanos(1),
-            Nanos(1),
-            Nanos(1),
-            DataSize[](0),
-        ),
-        ZoneStatistics[Nanos](
-            "real",
-            _loc(),
-            1,
-            Nanos(1_000),
-            Nanos(1_000),
-            Nanos(1_000),
-            DataSize[](2_000),
-        ),
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "zero-time",
+                _loc(),
+                1,
+                Nanos(0),
+                Nanos(0),
+                Nanos(0),
+                DataSize[](5),
+            ),
+            ZoneStatistics[Nanos](
+                "zero-bytes",
+                _loc(),
+                1,
+                Nanos(1),
+                Nanos(1),
+                Nanos(1),
+                DataSize[](0),
+            ),
+            ZoneStatistics[Nanos](
+                "real",
+                _loc(),
+                1,
+                Nanos(1_000),
+                Nanos(1_000),
+                Nanos(1_000),
+                DataSize[](2_000),
+            ),
+        ]
+    )
     var table = Report[Nanos](Nanos(1_000), stats^).tables()[0].copy()
     # A zero-elapsed zone divides to infinity unless it is skipped, which would
     # drag the whole column to the top of the unit ladder.
@@ -381,17 +385,25 @@ def test_zero_elapsed_is_na_and_zero_bytes_is_zero_rate() raises:
 
 
 def test_each_numeric_column_uses_one_unit_selected_from_its_maximum() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "a", _loc(), 1, Nanos(2_000), Nanos(2_000), Nanos(2_000), None
-        ),
-        ZoneStatistics[Nanos](
-            "b", _loc(), 1, Nanos(4_000), Nanos(4_000), Nanos(4_000), None
-        ),
-        ZoneStatistics[Nanos](
-            "c", _loc(), 1, Nanos(10_000), Nanos(10_000), Nanos(10_000), None
-        ),
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "a", _loc(), 1, Nanos(2_000), Nanos(2_000), Nanos(2_000), None
+            ),
+            ZoneStatistics[Nanos](
+                "b", _loc(), 1, Nanos(4_000), Nanos(4_000), Nanos(4_000), None
+            ),
+            ZoneStatistics[Nanos](
+                "c",
+                _loc(),
+                1,
+                Nanos(10_000),
+                Nanos(10_000),
+                Nanos(10_000),
+                None,
+            ),
+        ]
+    )
     var table = Report[Nanos](Nanos(20_000), stats^).tables()[0].copy()
     assert_equal(table.column(3).header, "Inclusive (us)")
     table.style.color = ColorMode.Never
@@ -404,17 +416,19 @@ def test_each_numeric_column_uses_one_unit_selected_from_its_maximum() raises:
 
 def test_scaled_count_column_shows_only_the_si_prefix() raises:
     comptime Instructions = Count["instructions"]
-    var stats = [
-        ZoneStatistics[Instructions](
-            "a",
-            _loc(),
-            1,
-            Instructions(2_000),
-            Instructions(2_000),
-            Instructions(2_000),
-            None,
-        )
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Instructions](
+                "a",
+                _loc(),
+                1,
+                Instructions(2_000),
+                Instructions(2_000),
+                Instructions(2_000),
+                None,
+            )
+        ]
+    )
     var report = Report[Instructions](Instructions(2_000), stats^)
     var table = report.tables()[0].copy()
     assert_equal(table.title, "instructions - total 2 k instructions")
@@ -423,17 +437,19 @@ def test_scaled_count_column_shows_only_the_si_prefix() raises:
 
 
 def test_maximum_decimals_is_report_owned() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "many",
-            _loc(),
-            1_234,
-            Nanos(1_234),
-            Nanos(1_234),
-            Nanos(1_234),
-            None,
-        )
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "many",
+                _loc(),
+                1_234,
+                Nanos(1_234),
+                Nanos(1_234),
+                Nanos(1_234),
+                None,
+            )
+        ]
+    )
     var default_report = Report[Nanos](Nanos(2_000), stats.copy())
     var custom_report = Report[Nanos](
         Nanos(2_000), stats^, ReportFormat(max_decimals=3)
@@ -448,20 +464,22 @@ def test_maximum_decimals_is_report_owned() raises:
 
 
 def test_nonzero_value_below_the_last_decimal_renders_zero() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "tiny", _loc(), 1, Nanos(1), Nanos(1), Nanos(1), None
-        ),
-        ZoneStatistics[Nanos](
-            "large",
-            _loc(),
-            1,
-            Nanos(1_000_000_000),
-            Nanos(1_000_000_000),
-            Nanos(1_000_000_000),
-            None,
-        ),
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "tiny", _loc(), 1, Nanos(1), Nanos(1), Nanos(1), None
+            ),
+            ZoneStatistics[Nanos](
+                "large",
+                _loc(),
+                1,
+                Nanos(1_000_000_000),
+                Nanos(1_000_000_000),
+                Nanos(1_000_000_000),
+                None,
+            ),
+        ]
+    )
     var report = Report[Nanos](Nanos(1_000_000_001), stats^)
     var table = report.tables()[0].copy()
     table.style.color = ColorMode.Never
@@ -526,11 +544,13 @@ def test_report_table_columns_are_inspectable() raises:
 
 
 def test_selected_columns_render_in_requested_order() raises:
-    var stats = [
-        ZoneStatistics[Nanos](
-            "work", _loc(), 2, Nanos(4), Nanos(2), Nanos(1), None
-        )
-    ]
+    var stats = List(
+        [
+            ZoneStatistics[Nanos](
+                "work", _loc(), 2, Nanos(4), Nanos(2), Nanos(1), None
+            )
+        ]
+    )
     var report = Report[Nanos](
         Nanos(10),
         stats^,

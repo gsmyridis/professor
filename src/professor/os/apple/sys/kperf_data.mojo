@@ -1,9 +1,14 @@
 from std.os import abort
 from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
-from std.memory import OptionalUnsafePointer, OpaquePointer
+from std.memory import OptionalPointer, OpaquePointer
 from std.sys import size_of
 from .kperf import KPCConfig
-from .ffi import ConstCStringPointer, _cast_optional_mut_ptr, c_void
+from .ffi import (
+    ConstCStringPointer,
+    _cast_optional_mut_ptr,
+    c_void,
+    load_symbol,
+)
 
 # ===-----------------------------------------------------------------------===#
 # KPEP architecture constants
@@ -27,7 +32,7 @@ struct KPEPEvent(Copyable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MutPointerType = UnsafePointer[Self, MutUntrackedOrigin]
+    comptime MutPointerType = Pointer[Self, MutUntrackedOrigin]
     """Non-nullable mutable pointer to KPEPEvent with untracked origin."""
 
     # ===-------------------------------------------------------------------===#
@@ -92,7 +97,7 @@ struct KPEPDb(Copyable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MutPointerType = UnsafePointer[Self, MutUntrackedOrigin]
+    comptime MutPointerType = Pointer[Self, MutUntrackedOrigin]
     """Non-nullable mutable pointer to KPEPDb with untracked origin."""
 
     # ===-------------------------------------------------------------------===#
@@ -119,13 +124,13 @@ struct KPEPDb(Copyable):
     var event_map: c_void
     """All events keyed by event name (`CFDictionaryRef`: `CFString -> *mut KPEPEvent`)."""
 
-    var event_arr: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin]
+    var event_arr: OptionalPointer[KPEPEvent, MutUntrackedOrigin]
     """Contiguous event array (`size_of[KPEPEvent]() * event_count`)."""
 
-    var fixed_event_arr: OptionalUnsafePointer[
+    var fixed_event_arr: OptionalPointer[
         KPEPEvent.MutPointerType, MutUntrackedOrigin
     ]
-    """Fixed counter event pointers (`size_of[OptionalUnsafePointer[KPEPEvent.MutPointerType, MutUntrackedOrigin]]() * fixed_counter_count`)."""
+    """Fixed counter event pointers (`size_of[OptionalPointer[KPEPEvent.MutPointerType, MutUntrackedOrigin]]() * fixed_counter_count`)."""
 
     var alias_map: c_void
     """All aliases keyed by alias name (`CFDictionaryRef`: `CFString -> *mut KPEPEvent`).
@@ -173,7 +178,7 @@ struct KPEPConfig(Copyable):
     # Aliases
     # ===-------------------------------------------------------------------===#
 
-    comptime MutPointerType = UnsafePointer[Self, MutUntrackedOrigin]
+    comptime MutPointerType = Pointer[Self, MutUntrackedOrigin]
     """Non-nullable mutable pointer to KPEPConfig with untracked origin."""
 
     # ===-------------------------------------------------------------------===#
@@ -182,14 +187,12 @@ struct KPEPConfig(Copyable):
 
     var db: KPEPDb.MutPointerType
 
-    var ev_arr: OptionalUnsafePointer[
-        KPEPEvent.MutPointerType, MutUntrackedOrigin
-    ]
+    var ev_arr: OptionalPointer[KPEPEvent.MutPointerType, MutUntrackedOrigin]
     """Event pointers (`size_of[KPEPEvent]() * counter_count`).
     Initially it is set to `NULL`.
     """
 
-    var ev_map: OptionalUnsafePointer[c_size_t, MutUntrackedOrigin]
+    var ev_map: OptionalPointer[c_size_t, MutUntrackedOrigin]
     """Maps event index -> absolute counter slot (`size_of[UInt]() * counter_count`),
     initially set to 0.
 
@@ -197,15 +200,15 @@ struct KPEPConfig(Copyable):
     `fixed_counter_count` to produce class-relative indices.
     """
 
-    var ev_idx: OptionalUnsafePointer[c_size_t, MutUntrackedOrigin]
+    var ev_idx: OptionalPointer[c_size_t, MutUntrackedOrigin]
     """Maps counter slot -> event index (`size_of[UInt]() * counter_count`),
     initially set to `UInt.MAX` (-1). It is the inverse of `ev_map`.
     """
 
-    var flags: OptionalUnsafePointer[UInt32, MutUntrackedOrigin]
+    var flags: OptionalPointer[UInt32, MutUntrackedOrigin]
     """Per-counter flags (`size_of[UInt32]() * counter_count`), initially 0."""
 
-    var kpc_periods: OptionalUnsafePointer[UInt64, MutUntrackedOrigin]
+    var kpc_periods: OptionalPointer[UInt64, MutUntrackedOrigin]
     """KPC sampling periods (`size_of[UInt64]() * counter_count`), initially 0."""
 
     var event_count: c_size_t
@@ -313,11 +316,9 @@ comptime _KPEP_DATA_LIBRARY = _Global["KPEP_DATA_LIBRARY", _init_library]
 
 
 @always_inline
-def _sym() -> UnsafePointer[_KPEPSymbols, ImmutUntrackedOrigin]:
+def _sym() -> Pointer[_KPEPSymbols, ImmUntrackedOrigin]:
     try:
-        return UnsafePointer(
-            to=_KPEP_DATA_LIBRARY.get_or_create_ptr()[].symbols
-        )
+        return Pointer(to=_KPEP_DATA_LIBRARY.get_or_create_ptr()[].symbols)
     except e:
         abort(t"kperfdata library unavailable: {e}")
 
@@ -332,9 +333,7 @@ def kpep_config_create[
     origin: MutOrigin, //
 ](
     db: KPEPDb.MutPointerType,
-    cfg_ptr: UnsafePointer[
-        UnsafePointer[KPEPConfig, MutUntrackedOrigin], origin
-    ],
+    cfg_ptr: Pointer[Pointer[KPEPConfig, MutUntrackedOrigin], origin],
 ) -> c_int:
     """Creates a new configuration builder for a database.
 
@@ -363,9 +362,9 @@ def kpep_config_add_event[
     origin_event: MutOrigin, origin_error: MutOrigin
 ](
     cfg: KPEPConfig.MutPointerType,
-    ev_ptr: UnsafePointer[KPEPEvent.MutPointerType, origin_event],
+    ev_ptr: Pointer[KPEPEvent.MutPointerType, origin_event],
     flag: UInt32,
-    err: OptionalUnsafePointer[UInt32, origin_error],
+    err: OptionalPointer[UInt32, origin_error],
 ) -> c_int:
     """Adds an event to a configuration.
 
@@ -416,10 +415,7 @@ def kpep_config_force_counters(cfg: KPEPConfig.MutPointerType) -> c_int:
 @always_inline
 def kpep_config_events_count[
     origin: MutOrigin, //
-](
-    cfg: KPEPConfig.MutPointerType,
-    count: UnsafePointer[c_size_t, origin],
-) -> c_int:
+](cfg: KPEPConfig.MutPointerType, count: Pointer[c_size_t, origin],) -> c_int:
     """Gets the number of events added to a config.
 
     Returns:
@@ -436,7 +432,7 @@ def kpep_config_events[
     origin: MutOrigin, //
 ](
     cfg: KPEPConfig.MutPointerType,
-    buf: UnsafePointer[KPEPEvent.MutPointerType, origin],
+    buf: Pointer[KPEPEvent.MutPointerType, origin],
     buf_size: c_size_t,
 ) -> c_int:
     """Gets all event pointers from a configuration.
@@ -462,7 +458,7 @@ def kpep_config_kpc[
     origin: MutOrigin, //
 ](
     cfg: KPEPConfig.MutPointerType,
-    buf: UnsafePointer[KPCConfig, origin],
+    buf: Pointer[KPCConfig, origin],
     buf_size: c_size_t,
 ) -> c_int:
     """Gets KPC register configuration values.
@@ -486,10 +482,7 @@ def kpep_config_kpc[
 @always_inline
 def kpep_config_kpc_count[
     origin: MutOrigin, //
-](
-    cfg: KPEPConfig.MutPointerType,
-    count: UnsafePointer[c_size_t, origin],
-) -> c_int:
+](cfg: KPEPConfig.MutPointerType, count: Pointer[c_size_t, origin],) -> c_int:
     """Gets the number of KPC register config values.
 
     Returns:
@@ -506,7 +499,7 @@ def kpep_config_kpc_classes[
     origin: MutOrigin, //
 ](
     cfg: KPEPConfig.MutPointerType,
-    classes_ptr: UnsafePointer[UInt32, origin],
+    classes_ptr: Pointer[UInt32, origin],
 ) -> c_int:
     """Gets the active KPC counter class mask.
 
@@ -526,7 +519,7 @@ def kpep_config_kpc_map[
     origin: MutOrigin, //
 ](
     cfg: KPEPConfig.MutPointerType,
-    buf: UnsafePointer[c_size_t, origin],
+    buf: Pointer[c_size_t, origin],
     buf_size: c_size_t,
 ) -> c_int:
     """Gets the mapping from event index to hardware counter slot.
@@ -557,7 +550,7 @@ def kpep_db_create[
     origin: MutOrigin, //
 ](
     name: ConstCStringPointer,
-    db_ptr: UnsafePointer[KPEPDb.MutPointerType, origin],
+    db_ptr: Pointer[KPEPDb.MutPointerType, origin],
 ) -> c_int:
     """Opens a KPEP database file.
 
@@ -590,7 +583,7 @@ def kpep_db_name[
     origin: MutOrigin, //
 ](
     db: KPEPDb.MutPointerType,
-    name: UnsafePointer[ConstCStringPointer, origin],
+    name: Pointer[ConstCStringPointer, origin],
 ) -> c_int:
     """Gets a database's marketing name, such as `"Apple M1"`.
 
@@ -606,7 +599,7 @@ def kpep_db_name[
 @always_inline
 def kpep_db_aliases_count[
     origin: MutOrigin, //
-](db: KPEPDb.MutPointerType, count: UnsafePointer[c_size_t, origin],) -> c_int:
+](db: KPEPDb.MutPointerType, count: Pointer[c_size_t, origin],) -> c_int:
     """Gets the number of event aliases in a database.
 
     Returns:
@@ -623,7 +616,7 @@ def kpep_db_aliases[
     origin: MutOrigin, //
 ](
     db: KPEPDb.MutPointerType,
-    buf: UnsafePointer[ConstCStringPointer, origin],
+    buf: Pointer[ConstCStringPointer, origin],
     buf_size: c_size_t,
 ) -> c_int:
     """Gets all alias strings from a database.
@@ -650,7 +643,7 @@ def kpep_db_counters_count[
 ](
     db: KPEPDb.MutPointerType,
     classes: UInt8,
-    count: UnsafePointer[c_size_t, origin],
+    count: Pointer[c_size_t, origin],
 ) -> c_int:
     """Gets the number of counters for a class mask.
 
@@ -669,7 +662,7 @@ def kpep_db_counters_count[
 @always_inline
 def kpep_db_events_count[
     origin: MutOrigin, //
-](db: KPEPDb.MutPointerType, count: UnsafePointer[c_size_t, origin],) -> c_int:
+](db: KPEPDb.MutPointerType, count: Pointer[c_size_t, origin],) -> c_int:
     """Gets the total number of events in a database.
 
     Returns:
@@ -686,7 +679,7 @@ def kpep_db_events[
     origin: MutOrigin, //
 ](
     db: KPEPDb.MutPointerType,
-    buf: UnsafePointer[KPEPEvent.MutPointerType, origin],
+    buf: Pointer[KPEPEvent.MutPointerType, origin],
     buf_size: c_size_t,
 ) -> c_int:
     """Gets all event pointers from a database.
@@ -709,13 +702,11 @@ def kpep_db_events[
 
 @always_inline
 def kpep_db_event[
-    name_origin: ImmutOrigin, ev_origin: MutOrigin, //
+    name_origin: ImmOrigin, ev_origin: MutOrigin, //
 ](
     db: KPEPDb.MutPointerType,
-    name: UnsafePointer[c_char, name_origin],
-    ev_ptr: UnsafePointer[
-        OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin], ev_origin
-    ],
+    name: Pointer[c_char, name_origin],
+    ev_ptr: Pointer[OptionalPointer[KPEPEvent, MutUntrackedOrigin], ev_origin],
 ) -> c_int:
     """Looks up one event by name or alias.
 
@@ -724,7 +715,7 @@ def kpep_db_event[
     """
     return _sym()[].kpep_db_event(
         db,
-        name.unsafe_origin_cast[ImmutUntrackedOrigin](),
+        name.unsafe_origin_cast[ImmUntrackedOrigin](),
         ev_ptr.unsafe_origin_cast[MutUntrackedOrigin](),
     )
 
@@ -739,7 +730,7 @@ def kpep_event_name[
     origin: MutOrigin, //
 ](
     ev: KPEPEvent.MutPointerType,
-    name: UnsafePointer[ConstCStringPointer, origin],
+    name: Pointer[ConstCStringPointer, origin],
 ) -> c_int:
     """Gets an event's unique name, such as `"INST_ALL"`.
 
@@ -757,7 +748,7 @@ def kpep_event_alias[
     origin: MutOrigin, //
 ](
     ev: KPEPEvent.MutPointerType,
-    event_alias: UnsafePointer[ConstCStringPointer, origin],
+    event_alias: Pointer[ConstCStringPointer, origin],
 ) -> c_int:
     """Gets an event's alias, such as `"Instructions"`, if one exists.
 
@@ -775,7 +766,7 @@ def kpep_event_description[
     origin: MutOrigin, //
 ](
     ev: KPEPEvent.MutPointerType,
-    description: UnsafePointer[ConstCStringPointer, origin],
+    description: Pointer[ConstCStringPointer, origin],
 ) -> c_int:
     """Gets an event's human-readable description, if available.
 
@@ -794,8 +785,8 @@ def kpep_event_description[
 
 comptime KPEPConfigCreateFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[
-        UnsafePointer[KPEPConfig, MutUntrackedOrigin],
+    Pointer[
+        Pointer[KPEPConfig, MutUntrackedOrigin],
         MutUntrackedOrigin,
     ],
 ) thin abi("C") -> c_int
@@ -804,9 +795,9 @@ comptime KPEPConfigFreeFn = def(KPEPConfig.MutPointerType) thin abi(
 ) -> NoneType
 comptime KPEPConfigAddEventFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
+    Pointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
     UInt32,
-    OptionalUnsafePointer[UInt32, MutUntrackedOrigin],
+    OptionalPointer[UInt32, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPConfigRemoveEventFn = def(
     KPEPConfig.MutPointerType, c_size_t
@@ -816,29 +807,29 @@ comptime KPEPConfigForceCountersFn = def(KPEPConfig.MutPointerType) thin abi(
 ) -> c_int
 comptime KPEPConfigEventsCountFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPConfigEventsFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
+    Pointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
     c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPConfigKPCFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[KPCConfig, MutUntrackedOrigin],
+    Pointer[KPCConfig, MutUntrackedOrigin],
     c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPConfigKPCCountFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPConfigKPCClassesFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[UInt32, MutUntrackedOrigin],
+    Pointer[UInt32, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPConfigKPCMapFn = def(
     KPEPConfig.MutPointerType,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
     c_size_t,
 ) thin abi("C") -> c_int
 
@@ -848,46 +839,44 @@ comptime KPEPConfigKPCMapFn = def(
 
 comptime KPEPDbCreateFn = def(
     ConstCStringPointer,
-    UnsafePointer[KPEPDb.MutPointerType, MutUntrackedOrigin],
+    Pointer[KPEPDb.MutPointerType, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPDbFreeFn = def(KPEPDb.MutPointerType) thin abi("C") -> NoneType
 comptime KPEPDbNameFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[ConstCStringPointer, MutUntrackedOrigin],
+    Pointer[ConstCStringPointer, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPDbAliasesCountFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPDbAliasesFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[ConstCStringPointer, MutUntrackedOrigin],
+    Pointer[ConstCStringPointer, MutUntrackedOrigin],
     c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPDbCountersCountFn = def(
     KPEPDb.MutPointerType,
     UInt8,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPDbEventsCountFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[c_size_t, MutUntrackedOrigin],
+    Pointer[c_size_t, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPDbEventsFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
+    Pointer[KPEPEvent.MutPointerType, MutUntrackedOrigin],
     c_size_t,
 ) thin abi("C") -> c_int
 comptime KPEPDbEventFn = def(
     KPEPDb.MutPointerType,
-    UnsafePointer[c_char, ImmutUntrackedOrigin],
-    UnsafePointer[
-        OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin], MutUntrackedOrigin
-    ],
+    Pointer[c_char, ImmUntrackedOrigin],
+    Pointer[OptionalPointer[KPEPEvent, MutUntrackedOrigin], MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPEPEventStringFn = def(
     KPEPEvent.MutPointerType,
-    UnsafePointer[ConstCStringPointer, MutUntrackedOrigin],
+    Pointer[ConstCStringPointer, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 
 
@@ -955,67 +944,67 @@ struct _KPEPSymbols(Copyable):
     var kpep_event_alias: KPEPEventStringFn
     var kpep_event_description: KPEPEventStringFn
 
-    def __init__(out self, handle: OwnedDLHandle):
-        self.kpep_config_create = handle.get_function[KPEPConfigCreateFn](
-            "kpep_config_create"
+    def __init__(out self, handle: OwnedDLHandle) raises:
+        self.kpep_config_create = load_symbol[KPEPConfigCreateFn](
+            handle, "kpep_config_create"
         )
-        self.kpep_config_free = handle.get_function[KPEPConfigFreeFn](
-            "kpep_config_free"
+        self.kpep_config_free = load_symbol[KPEPConfigFreeFn](
+            handle, "kpep_config_free"
         )
-        self.kpep_config_add_event = handle.get_function[KPEPConfigAddEventFn](
-            "kpep_config_add_event"
+        self.kpep_config_add_event = load_symbol[KPEPConfigAddEventFn](
+            handle, "kpep_config_add_event"
         )
-        self.kpep_config_remove_event = handle.get_function[
-            KPEPConfigRemoveEventFn
-        ]("kpep_config_remove_event")
-        self.kpep_config_force_counters = handle.get_function[
+        self.kpep_config_remove_event = load_symbol[KPEPConfigRemoveEventFn](
+            handle, "kpep_config_remove_event"
+        )
+        self.kpep_config_force_counters = load_symbol[
             KPEPConfigForceCountersFn
-        ]("kpep_config_force_counters")
-        self.kpep_config_events_count = handle.get_function[
-            KPEPConfigEventsCountFn
-        ]("kpep_config_events_count")
-        self.kpep_config_events = handle.get_function[KPEPConfigEventsFn](
-            "kpep_config_events"
+        ](handle, "kpep_config_force_counters")
+        self.kpep_config_events_count = load_symbol[KPEPConfigEventsCountFn](
+            handle, "kpep_config_events_count"
         )
-        self.kpep_config_kpc = handle.get_function[KPEPConfigKPCFn](
-            "kpep_config_kpc"
+        self.kpep_config_events = load_symbol[KPEPConfigEventsFn](
+            handle, "kpep_config_events"
         )
-        self.kpep_config_kpc_count = handle.get_function[KPEPConfigKPCCountFn](
-            "kpep_config_kpc_count"
+        self.kpep_config_kpc = load_symbol[KPEPConfigKPCFn](
+            handle, "kpep_config_kpc"
         )
-        self.kpep_config_kpc_classes = handle.get_function[
-            KPEPConfigKPCClassesFn
-        ]("kpep_config_kpc_classes")
-        self.kpep_config_kpc_map = handle.get_function[KPEPConfigKPCMapFn](
-            "kpep_config_kpc_map"
+        self.kpep_config_kpc_count = load_symbol[KPEPConfigKPCCountFn](
+            handle, "kpep_config_kpc_count"
         )
-        self.kpep_db_create = handle.get_function[KPEPDbCreateFn](
-            "kpep_db_create"
+        self.kpep_config_kpc_classes = load_symbol[KPEPConfigKPCClassesFn](
+            handle, "kpep_config_kpc_classes"
         )
-        self.kpep_db_free = handle.get_function[KPEPDbFreeFn]("kpep_db_free")
-        self.kpep_db_name = handle.get_function[KPEPDbNameFn]("kpep_db_name")
-        self.kpep_db_aliases_count = handle.get_function[KPEPDbAliasesCountFn](
-            "kpep_db_aliases_count"
+        self.kpep_config_kpc_map = load_symbol[KPEPConfigKPCMapFn](
+            handle, "kpep_config_kpc_map"
         )
-        self.kpep_db_aliases = handle.get_function[KPEPDbAliasesFn](
-            "kpep_db_aliases"
+        self.kpep_db_create = load_symbol[KPEPDbCreateFn](
+            handle, "kpep_db_create"
         )
-        self.kpep_db_counters_count = handle.get_function[
-            KPEPDbCountersCountFn
-        ]("kpep_db_counters_count")
-        self.kpep_db_events_count = handle.get_function[KPEPDbEventsCountFn](
-            "kpep_db_events_count"
+        self.kpep_db_free = load_symbol[KPEPDbFreeFn](handle, "kpep_db_free")
+        self.kpep_db_name = load_symbol[KPEPDbNameFn](handle, "kpep_db_name")
+        self.kpep_db_aliases_count = load_symbol[KPEPDbAliasesCountFn](
+            handle, "kpep_db_aliases_count"
         )
-        self.kpep_db_events = handle.get_function[KPEPDbEventsFn](
-            "kpep_db_events"
+        self.kpep_db_aliases = load_symbol[KPEPDbAliasesFn](
+            handle, "kpep_db_aliases"
         )
-        self.kpep_db_event = handle.get_function[KPEPDbEventFn]("kpep_db_event")
-        self.kpep_event_name = handle.get_function[KPEPEventStringFn](
-            "kpep_event_name"
+        self.kpep_db_counters_count = load_symbol[KPEPDbCountersCountFn](
+            handle, "kpep_db_counters_count"
         )
-        self.kpep_event_alias = handle.get_function[KPEPEventStringFn](
-            "kpep_event_alias"
+        self.kpep_db_events_count = load_symbol[KPEPDbEventsCountFn](
+            handle, "kpep_db_events_count"
         )
-        self.kpep_event_description = handle.get_function[KPEPEventStringFn](
-            "kpep_event_description"
+        self.kpep_db_events = load_symbol[KPEPDbEventsFn](
+            handle, "kpep_db_events"
+        )
+        self.kpep_db_event = load_symbol[KPEPDbEventFn](handle, "kpep_db_event")
+        self.kpep_event_name = load_symbol[KPEPEventStringFn](
+            handle, "kpep_event_name"
+        )
+        self.kpep_event_alias = load_symbol[KPEPEventStringFn](
+            handle, "kpep_event_alias"
+        )
+        self.kpep_event_description = load_symbol[KPEPEventStringFn](
+            handle, "kpep_event_description"
         )

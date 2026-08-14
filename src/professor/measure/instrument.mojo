@@ -7,7 +7,7 @@ from std.reflection import reflect
 # ===-----------------------------------------------------------------------===
 
 
-trait Instrument(Defaultable, ImplicitlyDeletable, Movable):
+trait Instrument(Defaultable, Deinitable, Movable):
     """Produces supported metric samples on demand."""
 
     comptime MetricType: _MetricInner
@@ -147,11 +147,11 @@ trait Metric(_MetricInner):
             ref field = rebind[downcast[FieldType, _ScalarMetric]](
                 r.field_ref[i](self)
             )
-            result.append(field._component(String(names[i])))
+            result.append(field._component(String(materialize[names[i]]())))
         return result^
 
 
-trait _MetricInner(Copyable, Defaultable, ImplicitlyDeletable):
+trait _MetricInner(Copyable, Defaultable, Deinitable):
     """Internal operations shared by supported scalar and composite metrics."""
 
     def sub(self, other: Self) -> Self:

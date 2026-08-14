@@ -33,30 +33,30 @@ struct Database(Movable):
     be freed exactly once.
     """
 
-    comptime UnsafePointerType = UnsafePointer[KPEPDb, MutUntrackedOrigin]
+    comptime PointerType = Pointer[KPEPDb, MutUntrackedOrigin]
 
-    var _ptr: Self.UnsafePointerType
+    var _ptr: Self.PointerType
 
     # ===--------------------------------------------------------------------===
     # Lifecycle methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self) raises:
-        var ptr = Self.UnsafePointerType.unsafe_dangling()
-        if kpep_db_create({}, UnsafePointer(to=ptr)) != 0:
+        var ptr = Self.PointerType.unsafe_dangling()
+        if kpep_db_create({}, Pointer(to=ptr)) != 0:
             raise Error("failed to create database")
 
         return self.__init__(unsafe_ptr=ptr)
 
     @always_inline
-    def __init__(out self, *, unsafe_ptr: Self.UnsafePointerType):
+    def __init__(out self, *, unsafe_ptr: Self.PointerType):
         self._ptr = unsafe_ptr
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         kpep_db_free(self._ptr)
 
     @always_inline
-    def unsafe_ptr(self) -> Self.UnsafePointerType:
+    def unsafe_ptr(self) -> Self.PointerType:
         return self._ptr
 
     # ===--------------------------------------------------------------------===
@@ -77,7 +77,7 @@ struct Database(Movable):
     def marketing_name(self) raises -> StringSlice[origin_of(self)]:
         """Returns the marketing name of the CPU, e.g. `"Apple M1"`."""
         var ptr: ConstCStringPointer = {}
-        if kpep_db_name(self._ptr, UnsafePointer(to=ptr)) != 0:
+        if kpep_db_name(self._ptr, Pointer(to=ptr)) != 0:
             raise Error("failed to get marketing name")
         return cstr_to_slice[origin_of(self)](ptr)
 
@@ -105,7 +105,7 @@ struct Database(Movable):
             The number of event aliases.
         """
         var count: c_size_t = 0
-        if kpep_db_aliases_count(self._ptr, UnsafePointer(to=count)) != 0:
+        if kpep_db_aliases_count(self._ptr, Pointer(to=count)) != 0:
             raise Error("failed to get alias count")
         return Int(count)
 
@@ -146,7 +146,7 @@ struct Database(Movable):
             The number of events.
         """
         var count: c_size_t = 0
-        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
+        if kpep_db_events_count(self._ptr, Pointer(to=count)) != 0:
             raise Error("failed to get event count")
         return Int(count)
 
@@ -157,7 +157,7 @@ struct Database(Movable):
             A list with the event handles.
         """
         var count: c_size_t = 0
-        if kpep_db_events_count(self._ptr, UnsafePointer(to=count)) != 0:
+        if kpep_db_events_count(self._ptr, Pointer(to=count)) != 0:
             raise Error("failed to get event count")
 
         if not self._ptr[].event_arr:
@@ -169,11 +169,13 @@ struct Database(Movable):
         var result = List[DatabaseEvent[origin_of(self)]](capacity=Int(count))
         var base = self._ptr[].event_arr.value()
         for i in range(Int(count)):
-            result.append(DatabaseEvent[origin_of(self)](unsafe_ptr=base + i))
+            result.append(
+                DatabaseEvent[origin_of(self)](unsafe_ptr=base.unsafe_offset(i))
+            )
         return result^
 
     def get_event[
-        origin: ImmutOrigin
+        origin: ImmOrigin
     ](self, *, unsafe_name: CStringSlice[origin]) raises -> DatabaseEvent[
         origin_of(self)
     ]:
@@ -188,11 +190,11 @@ struct Database(Movable):
         Raises:
             When the event is not contained in the database.
         """
-        var ev: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
+        var ev: OptionalPointer[KPEPEvent, MutUntrackedOrigin] = {}
         var res = kpep_db_event(
             self._ptr,
-            unsafe_name.unsafe_ptr().bitcast[c_char](),
-            UnsafePointer(to=ev),
+            unsafe_name.unsafe_ptr().unsafe_bitcast[c_char](),
+            Pointer(to=ev),
         )
         if res != 0:
             raise Error("event not found: " + String(unsafe_name))
@@ -234,7 +236,7 @@ struct Database(Movable):
         var res = kpep_db_counters_count(
             self._ptr,
             UInt8(classes.value()),
-            UnsafePointer(to=count),
+            Pointer(to=count),
         )
         if res != 0:
             raise Error("failed to get counters count for specified classes")

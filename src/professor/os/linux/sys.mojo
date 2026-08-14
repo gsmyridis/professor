@@ -355,7 +355,7 @@ struct Attributes(Copyable, Defaultable):
 def perf_event_open[
     origin: MutOrigin,
 ](
-    attrs: UnsafePointer[Attributes, origin],
+    attrs: Pointer[Attributes, origin],
     pid: c_int,
     cpu: c_int,
     group_fd: c_int,
@@ -487,7 +487,7 @@ def perf_event_reset(fd: c_int, flags: c_ulong = 0) -> c_int:
 
 def perf_event_id[
     origin: MutOrigin,
-](fd: c_int, id_out: UnsafePointer[UInt64, origin]) -> c_int:
+](fd: c_int, id_out: Pointer[UInt64, origin]) -> c_int:
     """Read an event's kernel-assigned identifier.
 
     The identifier can be used to associate entries returned by a
@@ -507,7 +507,7 @@ def perf_event_read[
     origin: MutOrigin,
 ](
     fd: c_int,
-    values: UnsafePointer[UInt64, origin],
+    values: Pointer[UInt64, origin],
     value_capacity: c_size_t,
 ) -> c_ssize_t:
     """Read a counting payload from an event file descriptor.

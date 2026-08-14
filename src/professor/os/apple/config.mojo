@@ -119,7 +119,7 @@ struct Configuration(Movable):
 # ===-----------------------------------------------------------------------====
 
 
-struct ConfigBuilder[origin: ImmutOrigin](Movable):
+struct ConfigBuilder[origin: ImmOrigin](Movable):
     """Mutable KPEP-backed builder for a runtime `Configuration`.
 
     This struct owns a `KPEPConfig` handle created by `kpep_config_create`.
@@ -132,21 +132,21 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
     Call `build()` to copy out the runtime values and discard the KPEP handle.
     """
 
-    comptime _UnsafePointerType = UnsafePointer[KPEPConfig, MutUntrackedOrigin]
+    comptime _PointerType = Pointer[KPEPConfig, MutUntrackedOrigin]
 
-    var _ptr: Self._UnsafePointerType
+    var _ptr: Self._PointerType
 
     # ===--------------------------------------------------------------------===
     # Lifetime methods
     # ===--------------------------------------------------------------------===
 
     def __init__(out self, ref[Self.origin] db: Database) raises:
-        var ptr = Self._UnsafePointerType.unsafe_dangling()
-        if kpep_config_create(db._ptr, UnsafePointer(to=ptr)) != 0:
+        var ptr = Self._PointerType.unsafe_dangling()
+        if kpep_config_create(db._ptr, Pointer(to=ptr)) != 0:
             raise Error("failed to create config")
         self._ptr = ptr
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         kpep_config_free(self._ptr)
 
     # ===--------------------------------------------------------------------===
@@ -172,9 +172,9 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
         if (
             kpep_config_add_event(
                 self._ptr,
-                UnsafePointer(to=event._ptr),
+                Pointer(to=event._ptr),
                 mode._flag,
-                UnsafePointer(to=err),
+                Pointer(to=err),
             )
             != 0
         ):
@@ -190,25 +190,23 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
 
     def events_count(self) raises -> Int:
         var count: c_size_t = 0
-        if kpep_config_events_count(self._ptr, UnsafePointer(to=count)) != 0:
+        if kpep_config_events_count(self._ptr, Pointer(to=count)) != 0:
             raise Error("failed to get event count")
         return Int(count)
 
     def events(self) raises -> List[DatabaseEvent[Self.origin]]:
         """Returns every event added to this configuration."""
         var count = self.events_count()
-        var buf = List[UnsafePointer[KPEPEvent, MutUntrackedOrigin]](
+        var buf = List[Pointer[KPEPEvent, MutUntrackedOrigin]](
             length=count,
-            fill=UnsafePointer[KPEPEvent, MutUntrackedOrigin].unsafe_dangling(),
+            fill=Pointer[KPEPEvent, MutUntrackedOrigin].unsafe_dangling(),
         )
         if (
             kpep_config_events(
                 self._ptr,
                 buf.unsafe_ptr(),
                 c_size_t(count)
-                * c_size_t(
-                    size_of[UnsafePointer[KPEPEvent, MutUntrackedOrigin]]()
-                ),
+                * c_size_t(size_of[Pointer[KPEPEvent, MutUntrackedOrigin]]()),
             )
             != 0
         ):
@@ -242,7 +240,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
         var count: c_size_t = 0
         var res = kpep_config_kpc_count(
             self._ptr,
-            UnsafePointer(to=count),
+            Pointer(to=count),
         )
         if res != 0:
             raise Error("failed to read the kpc register count")
@@ -271,7 +269,7 @@ struct ConfigBuilder[origin: ImmutOrigin](Movable):
             The classes mask.
         """
         var classes: UInt32 = 0
-        var res = kpep_config_kpc_classes(self._ptr, UnsafePointer(to=classes))
+        var res = kpep_config_kpc_classes(self._ptr, Pointer(to=classes))
         if res != 0:
             raise Error("failed to read active KPC counter classes")
 

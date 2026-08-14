@@ -34,7 +34,7 @@ def run_kperf_ffi_example() raises:
     # ===--------------------------------------------------------------------===
     # Get CPU string
     # ===--------------------------------------------------------------------===
-    var cpu_id_buffer = InlineArray[c_char, 64](fill=0)
+    var cpu_id_buffer = Array[c_char, 64](fill=0)
     var _ = kperf.kpc_cpu_string(
         cpu_id_buffer.unsafe_ptr(), c_size_t(len(cpu_id_buffer))
     )
@@ -86,12 +86,12 @@ def run_kperf_ffi_example() raises:
     # ===--------------------------------------------------------------------===
     print("Getting CPU counters:")
     var counters_cpu_id: c_int = 0
-    var cpu_counters_buf = InlineArray[UInt64, 64](fill=0)
+    var cpu_counters_buf = Array[UInt64, 64](fill=0)
     assert_success(
         kperf.kpc_get_cpu_counters(
             False,
             kperf.KPC_CLASS_FIXED_MASK,
-            UnsafePointer(to=counters_cpu_id),
+            Pointer(to=counters_cpu_id),
             cpu_counters_buf.unsafe_ptr(),
         )
     )
@@ -125,17 +125,17 @@ def run_kperf_ffi_example() raises:
     print("Forcing all counters to:", val)
     assert_success(kperf.kpc_force_all_ctrs_set(val))
 
-    assert_success(kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val)))
+    assert_success(kperf.kpc_force_all_ctrs_get(Pointer(to=val)))
     print("Reading all counters:", val)
 
     # ===--------------------------------------------------------------------===
     # Config
     # ===--------------------------------------------------------------------===
     var db = kperf_data.KPEPDb.MutPointerType.unsafe_dangling()
-    assert_success(kperf_data.kpep_db_create({}, UnsafePointer(to=db)))
+    assert_success(kperf_data.kpep_db_create({}, Pointer(to=db)))
 
     var config = kperf_data.KPEPConfig.MutPointerType.unsafe_dangling()
-    assert_success(kperf_data.kpep_config_create(db, UnsafePointer(to=config)))
+    assert_success(kperf_data.kpep_config_create(db, Pointer(to=config)))
 
     kperf_data.kpep_config_free(config)
 

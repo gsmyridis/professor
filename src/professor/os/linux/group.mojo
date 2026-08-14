@@ -177,7 +177,7 @@ struct Group(Movable, Sized):
 
 
 @explicit_destroy("The group builder must be consumed with: .build()")
-struct GroupBuilder(Movable, Sized):
+struct GroupBuilder(Deinitable where False, Movable, Sized):
     """Build an owned group from independently configured counters."""
 
     var _leader: _CounterHandle

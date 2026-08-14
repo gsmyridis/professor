@@ -102,7 +102,7 @@ def measure_function() raises:
     # # ===--------------------------------------------------------------===
     # var events_count: c_size_t = 0
     # assert_success(
-    #     kperf_data.kpep_config_events_count(cfg, UnsafePointer(to=events_count))
+    #     kperf_data.kpep_config_events_count(cfg, Pointer(to=events_count))
     # )
 
     # var slot_map = alloc(
