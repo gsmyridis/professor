@@ -23,6 +23,15 @@ requirements:
   run:
     - ${{ pin_compatible('mojo-compiler') }}
 
+tests:
+  - script:
+      - if: unix
+        then:
+          - mojo run test_package.mojo
+    files:
+      recipe:
+        - tests/package/test.mojo
+
 about:
   homepage: https://github.com/gsmyridis/professor
   repository: https://github.com/gsmyridis/professor
