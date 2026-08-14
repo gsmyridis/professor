@@ -2,18 +2,20 @@
 .pixi/*
 !.pixi/config.toml
 
+# Conda
+.conda/
+output/
+
 # Apple
 **/.DS_Store
 
-# Agent configs
+# Agentic
 .claude/
 .codex/
+CONTEXT.md
 
 # Python
-**/__pycache__
+__pycache__/
 
 # Examples
-**/data
-
-# Sources
-/sources
+data/
