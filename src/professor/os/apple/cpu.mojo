@@ -109,10 +109,10 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
             The current CPU identification string.
         """
         # 64 bytes is assumed to be enough.
-        # InlineArray means string does not require allocation.
-        var buf = InlineArray[UInt8, 64](fill=0)
+        # Array means string does not require allocation.
+        var buf = Array[UInt8, 64](fill=0)
         var n = kpc_cpu_string(
-            buf.unsafe_ptr().bitcast[c_char](), c_size_t(len(buf))
+            buf.unsafe_ptr().unsafe_bitcast[c_char](), c_size_t(len(buf))
         )
         if n < 0:
             return String()

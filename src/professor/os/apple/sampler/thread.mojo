@@ -42,7 +42,7 @@ struct ThreadSampler(Movable):
             fill=0,
         )
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         if self._running:
             _ = sys_kperf.kpc_set_thread_counting(0)
 

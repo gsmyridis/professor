@@ -12,9 +12,7 @@ from professor.os.apple.sys.ffi import (
 )
 
 
-struct DatabaseEvent[origin: ImmutOrigin](
-    Copyable, ImplicitlyCopyable, Movable
-):
+struct DatabaseEvent[origin: ImmOrigin](Copyable, ImplicitlyCopyable, Movable):
     """A borrowed, non-owning view of one event entry.
 
     `DatabaseEvent` never allocates or frees memory: the `KPEPEvent` it
@@ -23,31 +21,31 @@ struct DatabaseEvent[origin: ImmutOrigin](
     be returned or stored past the point where the owner is destroyed.
     """
 
-    var _ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
+    var _ptr: Pointer[KPEPEvent, MutUntrackedOrigin]
 
     def __init__(
-        out self, *, unsafe_ptr: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
+        out self, *, unsafe_ptr: Pointer[KPEPEvent, MutUntrackedOrigin]
     ):
         self._ptr = unsafe_ptr
 
     def name(self) raises -> StringSlice[Self.origin]:
         """Unique name of the event, such as `"INST_RETIRED.ANY"`."""
         var ptr: ConstCStringPointer = {}
-        if kpep_event_name(self._ptr, UnsafePointer(to=ptr)) != 0:
+        if kpep_event_name(self._ptr, Pointer(to=ptr)) != 0:
             raise Error("failed to get event name")
         return cstr_to_slice[Self.origin](ptr)
 
     def alias(self) raises -> Optional[StringSlice[Self.origin]]:
         """Alias name, such as `"Instructions"`, `"Cycles"`, if any."""
         var ptr: ConstCStringPointer = {}
-        if kpep_event_alias(self._ptr, UnsafePointer(to=ptr)) != 0:
+        if kpep_event_alias(self._ptr, Pointer(to=ptr)) != 0:
             raise Error("failed to get event alias")
         return cstr_to_slice_opt[Self.origin](ptr)
 
     def description(self) raises -> Optional[StringSlice[Self.origin]]:
         """Human-readable description, if available."""
         var ptr: ConstCStringPointer = {}
-        if kpep_event_description(self._ptr, UnsafePointer(to=ptr)) != 0:
+        if kpep_event_description(self._ptr, Pointer(to=ptr)) != 0:
             raise Error("failed to get event description")
         return cstr_to_slice_opt[Self.origin](ptr)
 

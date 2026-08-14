@@ -1,12 +1,12 @@
 """A direct Mojo port of the example's Rust JSON parser structure.
 
 Mojo requires an indirection for recursive values, so arrays and objects own
-their child `Value`s through `OwnedPointer`. Apart from that ownership detail,
-the implementation follows the Rust `Token` -> `Tokenizer` -> `Value` ->
-`Parser` organization.
+heap-allocated child `Value`s through `_ValuePtr`. Apart from that ownership
+detail, the implementation follows the Rust `Token` -> `Tokenizer` -> `Value`
+-> `Parser` organization.
 """
 
-from std.memory import OwnedPointer
+from std.memory import Layout, OwnedPointer, alloc
 from prof import (
     Profiler,
     TOKENISER,
@@ -260,21 +260,21 @@ struct ValueKind(Equatable, ImplicitlyCopyable):
     comptime Object = Self(5)
 
 
-struct Value(Movable):
+struct Value(Deinitable, Movable):
     var kind: ValueKind
     var bool_value: Bool
     var number_value: Float64
     var string_value: String
-    var array_value: List[OwnedPointer[Value]]
-    var object_value: Dict[String, OwnedPointer[Value]]
+    var array_value: List[_ValuePtr]
+    var object_value: Dict[String, _ValuePtr]
 
     def __init__(out self, kind: ValueKind):
         self.kind = kind
         self.bool_value = False
         self.number_value = 0.0
         self.string_value = String()
-        self.array_value = List[OwnedPointer[Value]]()
-        self.object_value = Dict[String, OwnedPointer[Value]]()
+        self.array_value = List[_ValuePtr]()
+        self.object_value = Dict[String, _ValuePtr]()
 
     @staticmethod
     def null() -> Self:
@@ -299,13 +299,13 @@ struct Value(Movable):
         return result^
 
     @staticmethod
-    def array(var value: List[OwnedPointer[Value]]) -> Self:
+    def array(var value: List[_ValuePtr]) -> Self:
         var result = Self(ValueKind.Array)
         result.array_value = value^
         return result^
 
     @staticmethod
-    def object(var value: Dict[String, OwnedPointer[Value]]) -> Self:
+    def object(var value: Dict[String, _ValuePtr]) -> Self:
         var result = Self(ValueKind.Object)
         result.object_value = value^
         return result^
@@ -314,6 +314,31 @@ struct Value(Movable):
         if self.kind != ValueKind.Number:
             raise Error("JSON value is not a number")
         return self.number_value
+
+
+struct _ValuePtr(Deinitable, Movable):
+    var _ptr: OptionalPointer[Value, MutUntrackedOrigin]
+
+    def __init__(out self, var value: Value):
+        var allocation = alloc(Layout[Value].single())
+        allocation.unsafe_ptr().unsafe_write(value^)
+        self._ptr = allocation^.unsafe_leak()
+
+    def __init__(out self, *, deinit move: Self):
+        self._ptr = move._ptr
+
+    def __deinit__(deinit self):
+        if self._ptr:
+            _ = OwnedPointer[Value](unsafe_from_raw_pointer=self._ptr.value())
+
+    def __getitem__[
+        mut: Bool, origin: Origin[mut=mut], //
+    ](ref[origin] self) -> ref[origin] Value:
+        return (
+            self._ptr.value()
+            .unsafe_mut_cast[mut]()
+            .unsafe_origin_cast[origin]()[]
+        )
 
 
 struct Parser[profile: Bool = False]:
@@ -382,7 +407,7 @@ struct Parser[profile: Bool = False]:
         raise Error("invalid token at start of JSON value")
 
     def _parse_array(mut self) raises -> Value:
-        var items = List[OwnedPointer[Value]]()
+        var items = List[_ValuePtr]()
         var next = self.tokenizer.peek_next()
         if next.kind == TokenKind.CloseBracket:
             _ = self.tokenizer.next_token()
@@ -395,7 +420,7 @@ struct Parser[profile: Bool = False]:
             if not maybe_value:
                 raise Error("reached EOF while parsing JSON array")
             var value = maybe_value.take()
-            items.append(OwnedPointer(value^))
+            items.append(_ValuePtr(value^))
 
             var separator = self.tokenizer.next_token()
             if separator.kind == TokenKind.CloseBracket:
@@ -414,7 +439,7 @@ struct Parser[profile: Bool = False]:
                 raise Error("reached EOF while parsing JSON array")
 
     def _parse_object(mut self) raises -> Value:
-        var members = Dict[String, OwnedPointer[Value]]()
+        var members = Dict[String, _ValuePtr]()
         var next = self.tokenizer.peek_next()
         if next.kind == TokenKind.CloseBrace:
             _ = self.tokenizer.next_token()
@@ -443,7 +468,7 @@ struct Parser[profile: Bool = False]:
 
             if key in members:
                 raise Error("duplicate JSON object key: ", key)
-            members[key] = OwnedPointer(value^)
+            members[key] = _ValuePtr(value^)
 
             var separator = self.tokenizer.next_token()
             if separator.kind == TokenKind.CloseBrace:

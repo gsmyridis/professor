@@ -14,25 +14,19 @@ from professor.os.apple.sys.testing import assert_success
 
 
 def print_event_info(
-    event: UnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin]
+    event: Pointer[kperf_data.KPEPEvent, MutUntrackedOrigin]
 ) raises:
     var event_name: ConstCStringPointer = {}
     var event_alias: ConstCStringPointer = {}
     var event_description: ConstCStringPointer = {}
-    assert_success(
-        kperf_data.kpep_event_name(event, UnsafePointer(to=event_name))
-    )
+    assert_success(kperf_data.kpep_event_name(event, Pointer(to=event_name)))
     print("\t- Name:", cstr_to_string(event_name))
 
-    assert_success(
-        kperf_data.kpep_event_alias(event, UnsafePointer(to=event_alias))
-    )
+    assert_success(kperf_data.kpep_event_alias(event, Pointer(to=event_alias)))
     print("\t- Alias:", cstr_to_string(event_alias))
 
     assert_success(
-        kperf_data.kpep_event_description(
-            event, UnsafePointer(to=event_description)
-        )
+        kperf_data.kpep_event_description(event, Pointer(to=event_description))
     )
     print("\t- Description:", cstr_to_string(event_description))
 
@@ -43,7 +37,7 @@ def run_kperf_data_ffi_example() raises:
     # ===--------------------------------------------------------------------===
 
     var db = kperf_data.KPEPDb.MutPointerType.unsafe_dangling()
-    assert_success(kperf_data.kpep_db_create({}, UnsafePointer(to=db)))
+    assert_success(kperf_data.kpep_db_create({}, Pointer(to=db)))
 
     # ===--------------------------------------------------------------------===
     # Get database's names
@@ -51,9 +45,7 @@ def run_kperf_data_ffi_example() raises:
     print("Database name:", cstr_to_string(db[].name))
 
     var db_marketing_name: ConstCStringPointer = {}
-    assert_success(
-        kperf_data.kpep_db_name(db, UnsafePointer(to=db_marketing_name))
-    )
+    assert_success(kperf_data.kpep_db_name(db, Pointer(to=db_marketing_name)))
     assert_equal(db[].marketing_name, db_marketing_name)
     print("Database market_name:", cstr_to_string(db_marketing_name))
 
@@ -67,7 +59,7 @@ def run_kperf_data_ffi_example() raises:
     # ===--------------------------------------------------------------------===
     var db_aliases_count: c_size_t = 0
     assert_success(
-        kperf_data.kpep_db_aliases_count(db, UnsafePointer(to=db_aliases_count))
+        kperf_data.kpep_db_aliases_count(db, Pointer(to=db_aliases_count))
     )
     print("Database alias count:", db_aliases_count)
 
@@ -82,7 +74,7 @@ def run_kperf_data_ffi_example() raises:
     )
     print("Aliases:")
     for i in range(Int(db_aliases_count)):
-        print("\t-", cstr_to_string((db_aliases_arr + i)[]))
+        print("\t-", cstr_to_string(db_aliases_arr.unsafe_offset(i)[]))
 
     # ===--------------------------------------------------------------------===
     # Get database's counters count
@@ -92,7 +84,7 @@ def run_kperf_data_ffi_example() raises:
         kperf_data.kpep_db_counters_count(
             db,
             UInt8(kperf.KPC_CLASS_FIXED_MASK),
-            UnsafePointer(to=db_counters_count),
+            Pointer(to=db_counters_count),
         )
     )
     print("Database counters count:", db_counters_count)
@@ -104,7 +96,7 @@ def run_kperf_data_ffi_example() raises:
     assert_success(
         kperf_data.kpep_db_events_count(
             db,
-            UnsafePointer(to=db_event_count),
+            Pointer(to=db_event_count),
         )
     )
     print("Database event count:", db_event_count)
@@ -112,21 +104,20 @@ def run_kperf_data_ffi_example() raises:
     # ===--------------------------------------------------------------------===
     # Get database's events-array
     # ===--------------------------------------------------------------------===
-    var db_events_arr = List[
-        UnsafePointer[kperf_data.KPEPEvent, MutUntrackedOrigin]
-    ](unsafe_uninit_length=Int(db_event_count))
+    var db_events_arr = List[Pointer[kperf_data.KPEPEvent, MutUntrackedOrigin]](
+        unsafe_uninit_length=Int(db_event_count)
+    )
     assert_success(
         kperf_data.kpep_db_events(
             db,
             db_events_arr.unsafe_ptr(),
-            db_event_count * UInt(size_of[db_events_arr._UnsafePointerType]()),
+            db_event_count * UInt(size_of[db_events_arr._PointerType]()),
         )
     )
 
     # ===--------------------------------------------------------------------===
     # Get event's names, alias and description by index
     # ===--------------------------------------------------------------------===
-    var event_idx = 1
     for event_idx in range(db_event_count):
         print(t"Get event info by index: {event_idx}")
         print_event_info(db_events_arr[event_idx])
@@ -135,15 +126,13 @@ def run_kperf_data_ffi_example() raises:
     # Get event's names and alias
     # ===--------------------------------------------------------------------===
     var event_name = "FIXED_CYCLES"
-    var event: OptionalUnsafePointer[
-        kperf_data.KPEPEvent, MutUntrackedOrigin
-    ] = {}
+    var event: OptionalPointer[kperf_data.KPEPEvent, MutUntrackedOrigin] = {}
     print(t"Get event info by name: '{event_name}'")
     assert_success(
         kperf_data.kpep_db_event(
             db,
             event_name.as_c_string_slice().unsafe_ptr(),
-            UnsafePointer(to=event),
+            Pointer(to=event),
         )
     )
     print_event_info(event.value())

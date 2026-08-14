@@ -34,72 +34,68 @@ from professor.os.apple.sys import cstr_to_string
 
 
 struct RawDatabase(Movable):
-    var ptr: UnsafePointer[KPEPDb, MutUntrackedOrigin]
+    var ptr: Pointer[KPEPDb, MutUntrackedOrigin]
 
     def __init__(out self) raises:
-        var ptr = UnsafePointer[KPEPDb, MutUntrackedOrigin].unsafe_dangling()
-        assert_equal(kpep_db_create({}, UnsafePointer(to=ptr)), 0)
+        var ptr = Pointer[KPEPDb, MutUntrackedOrigin].unsafe_dangling()
+        assert_equal(kpep_db_create({}, Pointer(to=ptr)), 0)
         self.ptr = ptr
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         kpep_db_free(self.ptr)
 
     def events(
         self,
-    ) raises -> List[UnsafePointer[KPEPEvent, MutUntrackedOrigin]]:
+    ) raises -> List[Pointer[KPEPEvent, MutUntrackedOrigin]]:
         var count: c_size_t = 0
-        var res = kpep_db_events_count(self.ptr, UnsafePointer(to=count))
+        var res = kpep_db_events_count(self.ptr, Pointer(to=count))
         assert_equal(res, 0, "failed to read events count")
 
         assert_true(Bool(self.ptr[].event_arr), "events array is null pointer")
         var base = self.ptr[].event_arr.value()
 
-        var events = List[UnsafePointer[KPEPEvent, MutUntrackedOrigin]](
+        var events = List[Pointer[KPEPEvent, MutUntrackedOrigin]](
             capacity=Int(count)
         )
         for i in range(Int(count)):
-            events.append(base + i)
+            events.append(base.unsafe_offset(i))
 
         return events^
 
 
 struct RawConfig(Movable):
-    var ptr: UnsafePointer[KPEPConfig, MutUntrackedOrigin]
+    var ptr: Pointer[KPEPConfig, MutUntrackedOrigin]
 
-    def __init__(
-        out self, db: UnsafePointer[KPEPDb, MutUntrackedOrigin]
-    ) raises:
-        var ptr = UnsafePointer[
-            KPEPConfig, MutUntrackedOrigin
-        ].unsafe_dangling()
-        assert_equal(kpep_config_create(db, UnsafePointer(to=ptr)), 0)
+    def __init__(out self, db: Pointer[KPEPDb, MutUntrackedOrigin]) raises:
+        var ptr = Pointer[KPEPConfig, MutUntrackedOrigin].unsafe_dangling()
+        assert_equal(kpep_config_create(db, Pointer(to=ptr)), 0)
         self.ptr = ptr
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         kpep_config_free(self.ptr)
 
 
 def _getter_name(
-    event: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
+    event: Pointer[KPEPEvent, MutUntrackedOrigin]
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
-    assert_equal(kpep_event_name(event, UnsafePointer(to=ptr)), 0)
+    assert_equal(kpep_event_name(event, Pointer(to=ptr)), 0)
     return cstr_to_string(ptr)
 
 
 def _getter_alias(
-    event: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
+    event: Pointer[KPEPEvent, MutUntrackedOrigin]
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
-    assert_equal(kpep_event_alias(event, UnsafePointer(to=ptr)), 0)
+    assert_equal(kpep_event_alias(event, Pointer(to=ptr)), 0)
     return cstr_to_string(ptr)
 
 
 def _getter_description(
-    event: UnsafePointer[KPEPEvent, MutUntrackedOrigin]
+    event: Pointer[KPEPEvent, MutUntrackedOrigin]
 ) raises -> String:
     var ptr: ConstCStringPointer = {}
-    assert_equal(kpep_event_description(event, UnsafePointer(to=ptr)), 0)
+    assert_equal(kpep_event_description(event, Pointer(to=ptr)), 0)
     return cstr_to_string(ptr)
 
 
@@ -112,7 +108,7 @@ def test_database_layout_events_counts() raises:
     var db = RawDatabase()
 
     var event_count: c_size_t = 0
-    var res = kpep_db_events_count(db.ptr, UnsafePointer(to=event_count))
+    var res = kpep_db_events_count(db.ptr, Pointer(to=event_count))
     assert_equal(res, 0, "failed to read events count")
     assert_equal(
         Int(db.ptr[].event_count),
@@ -125,7 +121,7 @@ def test_database_layout_alias_counts() raises:
     var db = RawDatabase()
 
     var alias_count: c_size_t = 0
-    var res = kpep_db_aliases_count(db.ptr, UnsafePointer(to=alias_count))
+    var res = kpep_db_aliases_count(db.ptr, Pointer(to=alias_count))
     assert_equal(res, 0, "failed to read alias counts")
     assert_equal(
         Int(db.ptr[].alias_count), Int(alias_count), "alias counts do not match"
@@ -136,7 +132,7 @@ def test_database_layout_marketing_names() raises:
     var db = RawDatabase()
 
     var marketing_name: ConstCStringPointer = {}
-    var res = kpep_db_name(db.ptr, UnsafePointer(to=marketing_name))
+    var res = kpep_db_name(db.ptr, Pointer(to=marketing_name))
     assert_equal(res, 0, "failed to read database marketing name")
     assert_equal(
         cstr_to_string(db.ptr[].marketing_name),
@@ -202,12 +198,12 @@ def test_apple_event_id_lookup_fields_match_framework_getters() raises:
     var db = RawDatabase()
 
     var inst_name = String("INST_ALL")
-    var inst: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
+    var inst: OptionalPointer[KPEPEvent, MutUntrackedOrigin] = {}
     assert_equal(
         kpep_db_event(
             db.ptr,
             inst_name.as_c_string_slice().unsafe_ptr(),
-            UnsafePointer(to=inst),
+            Pointer(to=inst),
         ),
         0,
     )
@@ -231,12 +227,12 @@ def test_config_fields_match_framework_getters_after_add_event() raises:
     assert_equal(kpep_config_force_counters(cfg.ptr), 0)
 
     var name = String("INST_ALL")
-    var event: OptionalUnsafePointer[KPEPEvent, MutUntrackedOrigin] = {}
+    var event: OptionalPointer[KPEPEvent, MutUntrackedOrigin] = {}
     assert_equal(
         kpep_db_event(
             db.ptr,
             name.as_c_string_slice().unsafe_ptr(),
-            UnsafePointer(to=event),
+            Pointer(to=event),
         ),
         0,
     )
@@ -247,21 +243,19 @@ def test_config_fields_match_framework_getters_after_add_event() raises:
     assert_equal(
         kpep_config_add_event(
             cfg.ptr,
-            UnsafePointer(to=event_ptr),
+            Pointer(to=event_ptr),
             0,
-            UnsafePointer(to=conflict_bits),
+            Pointer(to=conflict_bits),
         ),
         0,
     )
 
     var event_count: c_size_t = 0
-    assert_equal(
-        kpep_config_events_count(cfg.ptr, UnsafePointer(to=event_count)), 0
-    )
+    assert_equal(kpep_config_events_count(cfg.ptr, Pointer(to=event_count)), 0)
     assert_equal(Int(cfg.ptr[].event_count), Int(event_count))
 
     var classes: UInt32 = 0
-    assert_equal(kpep_config_kpc_classes(cfg.ptr, UnsafePointer(to=classes)), 0)
+    assert_equal(kpep_config_kpc_classes(cfg.ptr, Pointer(to=classes)), 0)
     assert_equal(cfg.ptr[].classes, classes)
 
     # Keep `db` alive through `cfg`'s entire lifetime (including its

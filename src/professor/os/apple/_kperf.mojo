@@ -111,8 +111,8 @@ def get_config(classes: UInt32, mut config: List[KPCConfig]) raises:
 def get_cpu_counters(
     all_cpus: Bool,
     classes: UInt32,
-    curcpu: OptionalUnsafePointer[c_int, MutUntrackedOrigin],
-    buf: UnsafePointer[UInt64, MutUntrackedOrigin],
+    curcpu: OptionalPointer[c_int, MutUntrackedOrigin],
+    buf: Pointer[UInt64, MutUntrackedOrigin],
 ) raises:
     """Gets counter accumulations.
 
@@ -133,7 +133,7 @@ def get_cpu_counters(
 @always_inline
 def get_thread_counters[
     origin: MutOrigin, //
-](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin],) raises:
+](tid: UInt32, buf_count: UInt32, buf: Pointer[UInt64, origin],) raises:
     """Gets counter accumulations for the current thread.
 
     Args:
@@ -165,7 +165,7 @@ def force_all_ctrs_get() raises -> c_int:
         The current state.
     """
     var val: c_int = 0
-    var res = sys_kperf.kpc_force_all_ctrs_get(UnsafePointer(to=val))
+    var res = sys_kperf.kpc_force_all_ctrs_get(Pointer(to=val))
     if res != 0:
         raise Error("failed to get force_all_ctrs state")
 
@@ -191,7 +191,7 @@ def kperf_action_count_get() raises -> UInt32:
         The number of actions.
     """
     var count: UInt32 = 0
-    var res = sys_kperf.kperf_action_count_get(UnsafePointer(to=count))
+    var res = sys_kperf.kperf_action_count_get(Pointer(to=count))
     if res != 0:
         raise Error("failed to get action count")
 
@@ -223,9 +223,7 @@ def kperf_action_samplers_get(actionid: UInt32) raises -> UInt32:
         Combination of `KPERF_SAMPLER_*` constants.
     """
     var sample: UInt32 = 0
-    var res = sys_kperf.kperf_action_samplers_get(
-        actionid, UnsafePointer(to=sample)
-    )
+    var res = sys_kperf.kperf_action_samplers_get(actionid, Pointer(to=sample))
     if res != 0:
         raise Error(t"failed to get samplers for action {actionid}")
 
@@ -275,7 +273,7 @@ def kperf_timer_count_get() raises -> UInt32:
         Pointer to receive the number of timer triggers.
     """
     var count: UInt32 = 0
-    var res = sys_kperf.kperf_timer_count_get(UnsafePointer(to=count))
+    var res = sys_kperf.kperf_timer_count_get(Pointer(to=count))
     if res != 0:
         raise Error("failed to get timer count")
 
@@ -293,9 +291,7 @@ def kperf_timer_period_set(timer_id: UInt32, period: UInt64) raises:
 def kperf_timer_period_get(timer_id: UInt32) raises -> UInt64:
     """Gets a timer period."""
     var period: UInt64 = 0
-    var res = sys_kperf.kperf_timer_period_get(
-        timer_id, UnsafePointer(to=period)
-    )
+    var res = sys_kperf.kperf_timer_period_get(timer_id, Pointer(to=period))
     if res != 0:
         raise Error(t"failed to get timer {timer_id} period")
     return period
@@ -316,9 +312,7 @@ def kperf_timer_action_get(timer_id: UInt32) raises -> UInt32:
         The action id associated with the timer.
     """
     var action_id: UInt32 = 0
-    var res = sys_kperf.kperf_timer_action_get(
-        timer_id, UnsafePointer(to=action_id)
-    )
+    var res = sys_kperf.kperf_timer_action_get(timer_id, Pointer(to=action_id))
     if res != 0:
         raise Error("failed to get action id")
 
@@ -346,7 +340,7 @@ def kperf_sample_get() raises -> UInt32:
         The sampling state.
     """
     var state: UInt32 = 0
-    var res = sys_kperf.kperf_sample_get(UnsafePointer(to=state))
+    var res = sys_kperf.kperf_sample_get(Pointer(to=state))
     if res != 0:
         raise Error("failed to get the sampling state")
 
@@ -381,7 +375,7 @@ def kperf_timer_pet_get() raises -> UInt32:
         The timer ID.
     """
     var timer_id: UInt32 = 0
-    var res = sys_kperf.kperf_timer_pet_get(UnsafePointer(to=timer_id))
+    var res = sys_kperf.kperf_timer_pet_get(Pointer(to=timer_id))
     if res != 0:
         raise Error("failed to read the PET timer ID")
 
