@@ -106,7 +106,7 @@ struct Profiler[
     @always_inline
     def _state[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref[origin] self) -> UnsafePointer[Self._ProfilerStateType, origin]:
+    ](ref[origin] self) -> Pointer[Self._ProfilerStateType, origin]:
         return (
             rebind[Self._EnabledStorageType](self._storage)
             .unsafe_ptr()
@@ -116,10 +116,8 @@ struct Profiler[
     @always_inline
     def _core_state[
         mut: Bool, origin: Origin[mut=mut], //
-    ](ref[origin] self) -> UnsafePointer[Self._CoreProfilerStateType, origin]:
-        return UnsafePointer(to=self._state()[].core).unsafe_origin_cast[
-            origin
-        ]()
+    ](ref[origin] self) -> Pointer[Self._CoreProfilerStateType, origin]:
+        return Pointer(to=self._state()[].core).unsafe_origin_cast[origin]()
 
     # ===--------------------------------------------------------------------===
     # Profiling session methods
@@ -296,7 +294,7 @@ struct Profiler[
         var h = _site_hash(name_hash, loc)
         var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
         var idx = st[].registry.get_index(key^)
-        var core = UnsafePointer(to=st[].core).unsafe_origin_cast[origin]()
+        var core = Pointer(to=st[].core).unsafe_origin_cast[origin]()
         return _open_zone[False, name](core, idx, loc, 0)
 
     @always_inline
@@ -314,7 +312,7 @@ struct Profiler[
         var h = _site_hash(name_hash, loc)
         var key = _SiteKey(h, name, loc.file_name(), loc.line(), loc.column())
         var idx = st[].registry.get_index(key^)
-        var core = UnsafePointer(to=st[].core).unsafe_origin_cast[origin]()
+        var core = Pointer(to=st[].core).unsafe_origin_cast[origin]()
         return _open_zone[True, name](core, idx, loc, bytes)
 
     # ===--------------------------------------------------------------------===
@@ -420,7 +418,7 @@ struct GlobalProfiler[
 
     @staticmethod
     @always_inline
-    def _profiler() -> UnsafePointer[Self.ProfilerType, MutUntrackedOrigin]:
+    def _profiler() -> Pointer[Self.ProfilerType, MutUntrackedOrigin]:
         try:
             return Self._global_profiler.get_or_create_ptr()
         except:
@@ -520,7 +518,7 @@ def _open_zone[
     tracks_data: Bool,
     label: StaticString,
 ](
-    st: UnsafePointer[_CoreProfilerState[I, C], origin],
+    st: Pointer[_CoreProfilerState[I, C], origin],
     idx: Int,
     loc: SourceLocation,
     bytes: UInt64,

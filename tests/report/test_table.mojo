@@ -71,7 +71,7 @@ def test_cell_alignment_overrides_the_column() raises:
     )
     table.style.show_header = False
     table.style.header_rule = False
-    var cells = [Cell("x", align=Align.Left), Cell("|")]
+    var cells = List([Cell("x", align=Align.Left), Cell("|")])
     table.add_row(cells^)
     assert_equal(String(table), "x     |\n")
 
@@ -185,7 +185,7 @@ def test_last_column_has_no_trailing_padding() raises:
 
 def test_color_never_strips_escapes() raises:
     var table = _plain([Column("A")])
-    var cells = [Cell("x", color=Color.Red, bold=True)]
+    var cells = List([Cell("x", color=Color.Red, bold=True)])
     table.add_row(cells^)
     assert_equal(String(table), "A\n-\nx\n")
 
@@ -197,7 +197,7 @@ def test_color_always_wraps_only_the_text() raises:
     table.style.color = ColorMode.Always
     table.style.show_header = False
     table.style.header_rule = False
-    var cells = [Cell("x", color=Color.Red)]
+    var cells = List([Cell("x", color=Color.Red)])
     table.add_row(cells^)
     # Padding stays outside the escape sequence.
     assert_equal(String(table), "  \033[31mx\033[0m\n")
@@ -206,7 +206,7 @@ def test_color_always_wraps_only_the_text() raises:
 def test_color_does_not_affect_column_width() raises:
     var table = Table(String(), [Column("A")], TableStyle())
     table.style.color = ColorMode.Always
-    var cells = [Cell("x", color=Color.Green, bold=True)]
+    var cells = List([Cell("x", color=Color.Green, bold=True)])
     table.add_row(cells^)
     assert_equal(table.column_widths()[0], 1)
 
@@ -232,7 +232,7 @@ def test_bold_without_a_color_is_not_reset_before_the_text() raises:
     table.style.color = ColorMode.Always
     table.style.show_header = False
     table.style.header_rule = False
-    var cells = [Cell("x", bold=True)]
+    var cells = List([Cell("x", bold=True)])
     table.add_row(cells^)
     assert_equal(String(table), "\033[1mx\033[0m\n")
 

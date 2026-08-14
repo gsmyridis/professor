@@ -27,7 +27,7 @@ comptime _MAX_DECIMALS = 9
 comptime _HOT_PERCENT = 50.0
 comptime _WARM_PERCENT = 20.0
 
-comptime _MANIFESTS: InlineArray[StaticString, 3] = [
+comptime _MANIFESTS: Array[StaticString, 3] = [
     "pixi.toml",
     "uv.toml",
     "pyproject.toml",
@@ -577,7 +577,7 @@ def _percent_color(percent: Optional[Float64]) -> Color:
 def _project_root() raises -> String:
     var directory = String(cwd())
     while True:
-        for manifest in _MANIFESTS:
+        for manifest in materialize[_MANIFESTS]():
             if (Path(directory) / manifest).is_file():
                 return directory^
         var parent = dirname(directory)
@@ -588,12 +588,15 @@ def _project_root() raises -> String:
 
 def _format_site(loc: SourceLocation, root: String) -> String:
     var file = String(loc.file_name())
+
     if file.startswith("./"):
-        file = String(file[byte=2:])
+        var formatted = String(file[byte=2:])
+        file = formatted^
 
     if root:
         var prefix = root + "/"
         if file.startswith(prefix):
-            file = String(file[byte = prefix.byte_length() :])
+            var formatted = String(file[byte = prefix.byte_length() :])
+            file = String(formatted^)
 
     return String(t"{file}:{loc.line()}:{loc.column()}")

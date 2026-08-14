@@ -22,7 +22,7 @@ struct _ProcessedDataHandle[enabled: Bool, origin: MutOrigin](
     # Comptime Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime _EnabledType = UnsafePointer[UInt64, Self.origin]
+    comptime _EnabledType = Pointer[UInt64, Self.origin]
     comptime _DisabledType = _DisabledProcessedDataHandle
     comptime _StorageType: ImplicitlyCopyable = (
         Self._EnabledType if Self.enabled else Self._DisabledType
@@ -55,7 +55,7 @@ struct _ProcessedDataHandle[enabled: Bool, origin: MutOrigin](
     @always_inline
     def add_bytes(self, bytes: UInt64):
         comptime if Self.enabled:
-            rebind[UnsafePointer[UInt64, Self.origin]](self._storage)[] += bytes
+            rebind[Pointer[UInt64, Self.origin]](self._storage)[] += bytes
         else:
             _ = bytes
 
@@ -67,7 +67,7 @@ struct _ProcessedDataHandle[enabled: Bool, origin: MutOrigin](
 
 @fieldwise_init
 @explicit_destroy("The profiling zone must be closed with: .close()")
-struct _DisabledProfileZone(Movable):
+struct _DisabledProfileZone(Deinitable where False, Movable):
     @always_inline
     def close(deinit self):
         pass
@@ -80,7 +80,7 @@ struct _EnabledProfileZone[
     C: Int,
     origin: MutOrigin,
     tracks_data: Bool,
-](Movable) where (
+](Deinitable where False, Movable) where (
     C > 0
 ):
     comptime MetricType = Self.I.MetricType
@@ -92,9 +92,7 @@ struct _EnabledProfileZone[
     var metric_inclusive_prev: Self.MetricType
     var metric_open: Self.MetricType
     var processed_bytes: UInt64
-    var prof_state: UnsafePointer[
-        _CoreProfilerState[Self.I, Self.C], Self.origin
-    ]
+    var prof_state: Pointer[_CoreProfilerState[Self.I, Self.C], Self.origin]
 
     def close(deinit self):
         # Sample first so close-side bookkeeping stays out of the interval.
@@ -134,7 +132,7 @@ struct _ProfileZone[
     C: Int,
     origin: MutOrigin,
     tracks_data: Bool = False,
-] where (
+](Deinitable where False) where (
     C > 0
 ):
     """A zone whose workload capability is fixed in its compile-time type."""
@@ -205,9 +203,9 @@ struct _ProfileZone[
             ref enabled = rebind[Self._EnabledType](self._storage)
             return rebind_var[HandleType](
                 _ProcessedDataHandle[True, handle_origin](
-                    UnsafePointer(
-                        to=enabled.processed_bytes
-                    ).unsafe_origin_cast[handle_origin]()
+                    Pointer(to=enabled.processed_bytes).unsafe_origin_cast[
+                        handle_origin
+                    ]()
                 )
             )
         else:

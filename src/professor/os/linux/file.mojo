@@ -9,7 +9,7 @@ struct _FileHandle(Movable):
     def __init__(out self, *, unsafe_fd: c_int):
         self._fd = unsafe_fd
 
-    def __del__(deinit self):
+    def __deinit__(deinit self):
         try:
             self.close()
         except:

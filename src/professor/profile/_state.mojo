@@ -20,7 +20,7 @@ struct _CoreProfilerState[I: Instrument, Capacity: Int](
     comptime MetricType = Self.I.MetricType
     """Profiling metric type."""
 
-    comptime _AnchorArrayType = InlineArray[
+    comptime _AnchorArrayType = Array[
         _Anchor[Self.MetricType], 2 * Self.Capacity
     ]
 

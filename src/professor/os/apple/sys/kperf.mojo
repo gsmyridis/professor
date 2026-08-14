@@ -22,9 +22,9 @@ Because the framework is private, symbols are not available at link time.
 
 from std.os import abort
 from std.ffi import _Global, OwnedDLHandle, c_char, c_int, c_size_t
-from std.memory import OptionalUnsafePointer
+from std.memory import OptionalPointer
 
-from .ffi import _cast_optional_mut_ptr
+from .ffi import _cast_optional_mut_ptr, load_symbol
 
 # ===-----------------------------------------------------------------------===#
 # Type Aliases
@@ -117,9 +117,9 @@ comptime _KPERF_LIBRARY = _Global["KPERF_LIBRARY", _init_library]
 
 
 @always_inline
-def _sym() -> UnsafePointer[_KPerfSymbols, ImmutUntrackedOrigin]:
+def _sym() -> Pointer[_KPerfSymbols, ImmUntrackedOrigin]:
     try:
-        return UnsafePointer(to=_KPERF_LIBRARY.get_or_create_ptr()[].symbols)
+        return Pointer(to=_KPERF_LIBRARY.get_or_create_ptr()[].symbols)
     except e:
         abort(t"kperf library unavailable: {e}")
 
@@ -139,7 +139,7 @@ def kpc_pmu_version() -> UInt32:
 @always_inline
 def kpc_cpu_string[
     origin: MutOrigin
-](buf: UnsafePointer[c_char, origin], buf_size: c_size_t) -> c_int:
+](buf: Pointer[c_char, origin], buf_size: c_size_t) -> c_int:
     """Prints the current CPU identification string to a buffer.
 
     The behavior is similar to `snprintf`. An example string is
@@ -260,7 +260,7 @@ def kpc_get_counter_count(classes: UInt32) -> UInt32:
 @always_inline
 def kpc_set_config[
     origin: MutOrigin, //
-](classes: UInt32, config: UnsafePointer[KPCConfig, origin]) -> c_int:
+](classes: UInt32, config: Pointer[KPCConfig, origin]) -> c_int:
     """Sets config registers.
 
     `config` should contain at least `kpc_get_config_count(classes)`
@@ -283,7 +283,7 @@ def kpc_set_config[
 @always_inline
 def kpc_get_config[
     origin: MutOrigin, //
-](classes: UInt32, config: UnsafePointer[KPCConfig, origin]) -> c_int:
+](classes: UInt32, config: Pointer[KPCConfig, origin]) -> c_int:
     """Gets config registers.
 
     `config` should have room for at least `kpc_get_config_count(classes)`
@@ -309,8 +309,8 @@ def kpc_get_cpu_counters[
 ](
     all_cpus: Bool,
     classes: UInt32,
-    cpu: OptionalUnsafePointer[c_int, cpu_origin],
-    buf: UnsafePointer[UInt64, buf_origin],
+    cpu: OptionalPointer[c_int, cpu_origin],
+    buf: Pointer[UInt64, buf_origin],
 ) -> c_int:
     """Gets counter accumulations.
 
@@ -340,7 +340,7 @@ def kpc_get_cpu_counters[
 @always_inline
 def kpc_get_thread_counters[
     origin: MutOrigin, //
-](tid: UInt32, buf_count: UInt32, buf: UnsafePointer[UInt64, origin]) -> c_int:
+](tid: UInt32, buf_count: UInt32, buf: Pointer[UInt64, origin]) -> c_int:
     """Gets counter accumulations for the current thread.
 
     Reads `kpc.thread_counters` via `sysctl`.
@@ -380,7 +380,7 @@ def kpc_force_all_ctrs_set(val: c_int) -> c_int:
 @always_inline
 def kpc_force_all_ctrs_get[
     origin: MutOrigin, //
-](val_out: UnsafePointer[c_int, origin]) -> c_int:
+](val_out: Pointer[c_int, origin]) -> c_int:
     """Gets the state of `force_all_ctrs`.
 
     Reads `kpc.force_all_ctrs` via `sysctl`.
@@ -414,7 +414,7 @@ def kperf_action_count_set(count: UInt32) -> c_int:
 @always_inline
 def kperf_action_count_get[
     origin: MutOrigin, //
-](count: UnsafePointer[UInt32, origin]) -> c_int:
+](count: Pointer[UInt32, origin]) -> c_int:
     """Gets the number of actions.
 
     Reads `kperf.action.count` via `sysctl`.
@@ -451,7 +451,7 @@ def kperf_action_samplers_set(actionid: UInt32, sample: UInt32) -> c_int:
 @always_inline
 def kperf_action_samplers_get[
     origin: MutOrigin, //
-](actionid: UInt32, sample: UnsafePointer[UInt32, origin]) -> c_int:
+](actionid: UInt32, sample: Pointer[UInt32, origin]) -> c_int:
     """Gets what an action samples when its trigger fires.
 
     Reads `kperf.action.samplers` via `sysctl`.
@@ -518,7 +518,7 @@ def kperf_timer_count_set(count: UInt32) -> c_int:
 @always_inline
 def kperf_timer_count_get[
     origin: MutOrigin, //
-](count: UnsafePointer[UInt32, origin]) -> c_int:
+](count: Pointer[UInt32, origin]) -> c_int:
     """Gets the number of timer triggers.
 
     Reads `kperf.timer.count` via `sysctl`.
@@ -549,7 +549,7 @@ def kperf_timer_period_set(timerid: UInt32, period: UInt64) -> c_int:
 @always_inline
 def kperf_timer_period_get[
     origin: MutOrigin, //
-](timer_id: UInt32, period: UnsafePointer[UInt64, origin]) -> c_int:
+](timer_id: UInt32, period: Pointer[UInt64, origin]) -> c_int:
     """Gets a timer period.
 
     Reads `kperf.timer.period` via `sysctl`.
@@ -577,7 +577,7 @@ def kperf_timer_action_set(timerid: UInt32, actionid: UInt32) -> c_int:
 @always_inline
 def kperf_timer_action_get[
     origin: MutOrigin, //
-](timer_id: UInt32, action_id: UnsafePointer[UInt32, origin]) -> c_int:
+](timer_id: UInt32, action_id: Pointer[UInt32, origin]) -> c_int:
     """Gets the action id associated with a timer.
 
     Reads `kperf.timer.action` via `sysctl`.
@@ -608,7 +608,7 @@ def kperf_sample_set(enabled: UInt32) -> c_int:
 @always_inline
 def kperf_sample_get[
     origin: MutOrigin, //
-](enabled: UnsafePointer[UInt32, origin]) -> c_int:
+](enabled: Pointer[UInt32, origin]) -> c_int:
     """Gets whether sampling is active.
 
     Reads `kperf.sampling` via `sysctl`.
@@ -652,7 +652,7 @@ def kperf_timer_pet_set(timer_id: UInt32) -> c_int:
 @always_inline
 def kperf_timer_pet_get[
     origin: MutOrigin, //
-](timer_id: UnsafePointer[UInt32, origin]) -> c_int:
+](timer_id: Pointer[UInt32, origin]) -> c_int:
     """Gets which timer id performs PET (Profile Every Thread).
 
     Reads `kperf.timer.pet_timer` via `sysctl`.
@@ -691,28 +691,28 @@ def kperf_tick_frequency() -> UInt64:
 # ===-----------------------------------------------------------------------===#
 
 comptime KPCCpuStringFn = def(
-    UnsafePointer[c_char, MutUntrackedOrigin], c_size_t
+    Pointer[c_char, MutUntrackedOrigin], c_size_t
 ) thin abi("C") -> c_int
 comptime KPCPmuVersionFn = def() thin abi("C") -> UInt32
 comptime KPCGetCountingFn = def() thin abi("C") -> UInt32
 comptime KPCSetCountingFn = def(UInt32) thin abi("C") -> c_int
 comptime KPCGetConfigCountFn = def(UInt32) thin abi("C") -> UInt32
 comptime KPCConfigFn = def(
-    UInt32, UnsafePointer[KPCConfig, MutUntrackedOrigin]
+    UInt32, Pointer[KPCConfig, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPCGetCounterCountFn = def(UInt32) thin abi("C") -> UInt32
 comptime KPCGetCpuCountersFn = def(
     Bool,
     UInt32,
-    OptionalUnsafePointer[c_int, MutUntrackedOrigin],
-    UnsafePointer[UInt64, MutUntrackedOrigin],
+    OptionalPointer[c_int, MutUntrackedOrigin],
+    Pointer[UInt64, MutUntrackedOrigin],
 ) thin abi("C") -> c_int
 comptime KPCGetThreadCountersFn = def(
-    UInt32, UInt32, UnsafePointer[UInt64, MutUntrackedOrigin]
+    UInt32, UInt32, Pointer[UInt64, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPCForceAllCtrsSetFn = def(c_int) thin abi("C") -> c_int
 comptime KPCForceAllCtrsGetFn = def(
-    UnsafePointer[c_int, MutUntrackedOrigin]
+    Pointer[c_int, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 
 # ===-----------------------------------------------------------------------===#
@@ -721,33 +721,33 @@ comptime KPCForceAllCtrsGetFn = def(
 
 comptime KPerfActionCountSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfActionCountGetFn = def(
-    UnsafePointer[UInt32, MutUntrackedOrigin]
+    Pointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfActionSamplersSetFn = def(UInt32, UInt32) thin abi("C") -> c_int
 comptime KPerfActionSamplersGetFn = def(
-    UInt32, UnsafePointer[UInt32, MutUntrackedOrigin]
+    UInt32, Pointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfActionFilterSetFn = def(UInt32, Int32) thin abi("C") -> c_int
 comptime KPerfTimerCountSetFn = def(UInt32) thin abi("C") -> c_int
 comptime KPerfTimerCountGetFn = def(
-    UnsafePointer[UInt32, MutUntrackedOrigin]
+    Pointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerPeriodSetFn = def(UInt32, UInt64) thin abi("C") -> c_int
 comptime KPerfTimerPeriodGetFn = def(
-    UInt32, UnsafePointer[UInt64, MutUntrackedOrigin]
+    UInt32, Pointer[UInt64, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerActionSetFn = def(UInt32, UInt32) thin abi("C") -> c_int
 comptime KPerfTimerActionGetFn = def(
-    UInt32, UnsafePointer[UInt32, MutUntrackedOrigin]
+    UInt32, Pointer[UInt32, MutUntrackedOrigin]
 ) thin abi("C") -> c_int
 comptime KPerfTimerPetSetFn = def(UInt32) thin abi("C") -> c_int
-comptime KPerfTimerPetGetFn = def(
-    UnsafePointer[UInt32, MutUntrackedOrigin]
-) thin abi("C") -> c_int
+comptime KPerfTimerPetGetFn = def(Pointer[UInt32, MutUntrackedOrigin]) thin abi(
+    "C"
+) -> c_int
 comptime KPerfSampleSetFn = def(UInt32) thin abi("C") -> c_int
-comptime KPerfSampleGetFn = def(
-    UnsafePointer[UInt32, MutUntrackedOrigin]
-) thin abi("C") -> c_int
+comptime KPerfSampleGetFn = def(Pointer[UInt32, MutUntrackedOrigin]) thin abi(
+    "C"
+) -> c_int
 comptime KPerfResetFn = def() thin abi("C") -> c_int
 comptime KPerfNsToTicksFn = def(UInt64) thin abi("C") -> UInt64
 comptime KPerfTicksToNsFn = def(UInt64) thin abi("C") -> UInt64
@@ -823,100 +823,100 @@ struct _KPerfSymbols(Movable):
     var kperf_ticks_to_ns: KPerfTicksToNsFn
     var kperf_tick_frequency: KPerfTickFrequencyFn
 
-    def __init__(out self, handle: OwnedDLHandle):
-        self.kpc_pmu_version = handle.get_function[KPCPmuVersionFn](
-            "kpc_pmu_version"
+    def __init__(out self, handle: OwnedDLHandle) raises:
+        self.kpc_pmu_version = load_symbol[KPCPmuVersionFn](
+            handle, "kpc_pmu_version"
         )
-        self.kpc_cpu_string = handle.get_function[KPCCpuStringFn](
-            "kpc_cpu_string"
+        self.kpc_cpu_string = load_symbol[KPCCpuStringFn](
+            handle, "kpc_cpu_string"
         )
-        self.kpc_set_counting = handle.get_function[KPCSetCountingFn](
-            "kpc_set_counting"
+        self.kpc_set_counting = load_symbol[KPCSetCountingFn](
+            handle, "kpc_set_counting"
         )
-        self.kpc_get_counting = handle.get_function[KPCGetCountingFn](
-            "kpc_get_counting"
+        self.kpc_get_counting = load_symbol[KPCGetCountingFn](
+            handle, "kpc_get_counting"
         )
-        self.kpc_set_thread_counting = handle.get_function[KPCSetCountingFn](
-            "kpc_set_thread_counting"
+        self.kpc_set_thread_counting = load_symbol[KPCSetCountingFn](
+            handle, "kpc_set_thread_counting"
         )
-        self.kpc_get_thread_counting = handle.get_function[KPCGetCountingFn](
-            "kpc_get_thread_counting"
+        self.kpc_get_thread_counting = load_symbol[KPCGetCountingFn](
+            handle, "kpc_get_thread_counting"
         )
-        self.kpc_get_config_count = handle.get_function[KPCGetConfigCountFn](
-            "kpc_get_config_count"
+        self.kpc_get_config_count = load_symbol[KPCGetConfigCountFn](
+            handle, "kpc_get_config_count"
         )
-        self.kpc_get_counter_count = handle.get_function[KPCGetCounterCountFn](
-            "kpc_get_counter_count"
+        self.kpc_get_counter_count = load_symbol[KPCGetCounterCountFn](
+            handle, "kpc_get_counter_count"
         )
-        self.kpc_set_config = handle.get_function[KPCConfigFn]("kpc_set_config")
-        self.kpc_get_config = handle.get_function[KPCConfigFn]("kpc_get_config")
-        self.kpc_get_cpu_counters = handle.get_function[KPCGetCpuCountersFn](
-            "kpc_get_cpu_counters"
+        self.kpc_set_config = load_symbol[KPCConfigFn](handle, "kpc_set_config")
+        self.kpc_get_config = load_symbol[KPCConfigFn](handle, "kpc_get_config")
+        self.kpc_get_cpu_counters = load_symbol[KPCGetCpuCountersFn](
+            handle, "kpc_get_cpu_counters"
         )
-        self.kpc_get_thread_counters = handle.get_function[
-            KPCGetThreadCountersFn
-        ]("kpc_get_thread_counters")
-        self.kpc_force_all_ctrs_set = handle.get_function[KPCForceAllCtrsSetFn](
-            "kpc_force_all_ctrs_set"
+        self.kpc_get_thread_counters = load_symbol[KPCGetThreadCountersFn](
+            handle, "kpc_get_thread_counters"
         )
-        self.kpc_force_all_ctrs_get = handle.get_function[KPCForceAllCtrsGetFn](
-            "kpc_force_all_ctrs_get"
+        self.kpc_force_all_ctrs_set = load_symbol[KPCForceAllCtrsSetFn](
+            handle, "kpc_force_all_ctrs_set"
         )
-        self.kperf_action_count_set = handle.get_function[
-            KPerfActionCountSetFn
-        ]("kperf_action_count_set")
-        self.kperf_action_count_get = handle.get_function[
-            KPerfActionCountGetFn
-        ]("kperf_action_count_get")
-        self.kperf_action_samplers_set = handle.get_function[
-            KPerfActionSamplersSetFn
-        ]("kperf_action_samplers_set")
-        self.kperf_action_samplers_get = handle.get_function[
-            KPerfActionSamplersGetFn
-        ]("kperf_action_samplers_get")
-        self.kperf_action_filter_set_by_task = handle.get_function[
+        self.kpc_force_all_ctrs_get = load_symbol[KPCForceAllCtrsGetFn](
+            handle, "kpc_force_all_ctrs_get"
+        )
+        self.kperf_action_count_set = load_symbol[KPerfActionCountSetFn](
+            handle, "kperf_action_count_set"
+        )
+        self.kperf_action_count_get = load_symbol[KPerfActionCountGetFn](
+            handle, "kperf_action_count_get"
+        )
+        self.kperf_action_samplers_set = load_symbol[KPerfActionSamplersSetFn](
+            handle, "kperf_action_samplers_set"
+        )
+        self.kperf_action_samplers_get = load_symbol[KPerfActionSamplersGetFn](
+            handle, "kperf_action_samplers_get"
+        )
+        self.kperf_action_filter_set_by_task = load_symbol[
             KPerfActionFilterSetFn
-        ]("kperf_action_filter_set_by_task")
-        self.kperf_action_filter_set_by_pid = handle.get_function[
+        ](handle, "kperf_action_filter_set_by_task")
+        self.kperf_action_filter_set_by_pid = load_symbol[
             KPerfActionFilterSetFn
-        ]("kperf_action_filter_set_by_pid")
-        self.kperf_timer_count_set = handle.get_function[KPerfTimerCountSetFn](
-            "kperf_timer_count_set"
+        ](handle, "kperf_action_filter_set_by_pid")
+        self.kperf_timer_count_set = load_symbol[KPerfTimerCountSetFn](
+            handle, "kperf_timer_count_set"
         )
-        self.kperf_timer_count_get = handle.get_function[KPerfTimerCountGetFn](
-            "kperf_timer_count_get"
+        self.kperf_timer_count_get = load_symbol[KPerfTimerCountGetFn](
+            handle, "kperf_timer_count_get"
         )
-        self.kperf_timer_period_set = handle.get_function[
-            KPerfTimerPeriodSetFn
-        ]("kperf_timer_period_set")
-        self.kperf_timer_period_get = handle.get_function[
-            KPerfTimerPeriodGetFn
-        ]("kperf_timer_period_get")
-        self.kperf_timer_action_set = handle.get_function[
-            KPerfTimerActionSetFn
-        ]("kperf_timer_action_set")
-        self.kperf_timer_action_get = handle.get_function[
-            KPerfTimerActionGetFn
-        ]("kperf_timer_action_get")
-        self.kperf_sample_set = handle.get_function[KPerfSampleSetFn](
-            "kperf_sample_set"
+        self.kperf_timer_period_set = load_symbol[KPerfTimerPeriodSetFn](
+            handle, "kperf_timer_period_set"
         )
-        self.kperf_sample_get = handle.get_function[KPerfSampleGetFn](
-            "kperf_sample_get"
+        self.kperf_timer_period_get = load_symbol[KPerfTimerPeriodGetFn](
+            handle, "kperf_timer_period_get"
         )
-        self.kperf_reset = handle.get_function[KPerfResetFn]("kperf_reset")
-        self.kperf_timer_pet_set = handle.get_function[KPerfTimerPetSetFn](
-            "kperf_timer_pet_set"
+        self.kperf_timer_action_set = load_symbol[KPerfTimerActionSetFn](
+            handle, "kperf_timer_action_set"
         )
-        self.kperf_timer_pet_get = handle.get_function[KPerfTimerPetGetFn](
-            "kperf_timer_pet_get"
+        self.kperf_timer_action_get = load_symbol[KPerfTimerActionGetFn](
+            handle, "kperf_timer_action_get"
         )
-        self.kperf_ns_to_ticks = handle.get_function[KPerfNsToTicksFn](
-            "kperf_ns_to_ticks"
+        self.kperf_sample_set = load_symbol[KPerfSampleSetFn](
+            handle, "kperf_sample_set"
         )
-        self.kperf_ticks_to_ns = handle.get_function[KPerfTicksToNsFn](
-            "kperf_ticks_to_ns"
+        self.kperf_sample_get = load_symbol[KPerfSampleGetFn](
+            handle, "kperf_sample_get"
         )
-        self.kperf_tick_frequency = handle.get_function[KPerfTickFrequencyFn](
-            "kperf_tick_frequency"
+        self.kperf_reset = load_symbol[KPerfResetFn](handle, "kperf_reset")
+        self.kperf_timer_pet_set = load_symbol[KPerfTimerPetSetFn](
+            handle, "kperf_timer_pet_set"
+        )
+        self.kperf_timer_pet_get = load_symbol[KPerfTimerPetGetFn](
+            handle, "kperf_timer_pet_get"
+        )
+        self.kperf_ns_to_ticks = load_symbol[KPerfNsToTicksFn](
+            handle, "kperf_ns_to_ticks"
+        )
+        self.kperf_ticks_to_ns = load_symbol[KPerfTicksToNsFn](
+            handle, "kperf_ticks_to_ns"
+        )
+        self.kperf_tick_frequency = load_symbol[KPerfTickFrequencyFn](
+            handle, "kperf_tick_frequency"
         )

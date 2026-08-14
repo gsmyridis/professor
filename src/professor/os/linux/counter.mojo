@@ -141,7 +141,7 @@ struct Counter(Movable):
         if fd < 0:
             raise Error("invalid file handle")
 
-        var buffer = InlineArray[UInt64, 3](fill=0)
+        var buffer = Array[UInt64, 3](fill=0)
         var bytes_read = perf_event_read(
             fd, buffer.unsafe_ptr(), c_size_t(len(buffer))
         )
@@ -179,10 +179,7 @@ struct _CounterHandle(Movable):
         self._event = event
         self._file = file^
         self._id = 0
-        if (
-            perf_event_id(self._file._get_raw_fd(), UnsafePointer(to=self._id))
-            != 0
-        ):
+        if perf_event_id(self._file._get_raw_fd(), Pointer(to=self._id)) != 0:
             var err = get_errno()
             raise Error(t"failed to get performance event id: {err}")
 
@@ -240,7 +237,7 @@ def _open_event(
     )
 
     var fd = perf_event_open(
-        UnsafePointer(to=config),
+        Pointer(to=config),
         c_int(process.value),
         c_int(cpu.value),
         group_leader_fd,
