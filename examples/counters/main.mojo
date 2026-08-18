@@ -186,5 +186,5 @@ def main() raises:
     Prof.end()
 
     print("result:", total)
-    var format = ReportFormat(decimals=3)
-    print(Prof.report())
+    var format = ReportFormat(max_decimals=3)
+    print(Prof.report(format^))

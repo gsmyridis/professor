@@ -2,791 +2,233 @@
 
 Professor is an instrumentation-based profiling library for Mojo.
 
-It is meant to help answer two questions: where does your code spend most of
-its time, and why is that time spent there?
+It helps answer two questions: where does your code spend most of its time, and
+why is that time spent there?
 
-You mark _profile zones_ in your code — as coarse or as granular as you want —
-and `professor` collects performance metrics for each zone.
+You mark profile zones in your code, as coarse or as granular as you need, and
+Professor collects performance metrics for each zone.
 
-## Why Professor
+## How Professor Works
 
-Mojo programs usually target SOTA performance.
-Coarse measurements, like timing the whole program, are useful final metrics,
-but fail to help you identify performance bottlenecks, i.e. _where_ your program
-spends most of its time.
-To improve performance systematically you need granular measurements that show
-which parts of your code are fast and which are slow.
+Professor measures *zones*: named regions that carry meaning in your program,
+such as `parse`, `tokenize`, or `solve`. It records how often each zone runs and
+how much of the selected metric it consumes.
 
-There are two complementary ways to get them:
+Zones may nest. Inclusive time covers the complete zone, including its
+children. Exclusive time removes child work, which separates orchestration
+from the work delegated to nested zones.
 
-- **Sampling profilers** (Instruments on macOS, `perf` on Linux) periodically
-  interrupt your program, record where it is, and sample selected metrics.
-  They are excellent tools and every programmer should learn them.
-- **Instrumentation profilers** make you explicitly mark the regions you care
-  about and collect exact per-region statistics, with semantic labels that
-  survive inlining and optimization.
+This complements sampling profilers such as Instruments and `perf`. Sampling
+discovers hot instructions without changing the program; instrumentation gives
+exact boundaries and semantic labels that remain useful after inlining.
 
-`professor` takes the second approach.
-In addition, it exposes the machinery underneath your program,
--- hardware performance counters, kernel profiling APIs, timestamp counters --
-wrapped in safer Mojo APIs, so your zones can measure not just _time_ but _why_:
-cache misses, branch behavior, retired instructions, and more.
+Use both when the question calls for both. Sampling finds unexpected hot code;
+Professor compares regions you care about and can attach metrics that explain
+why their costs differ.
+
+## Installation
+
+`professor` is available in the
+[`modular-community`](https://prefix.dev/channels/modular-community) package
+repository. Include the channel in your `pixi.toml`:
+
+```toml
+[workspace]
+channels = [
+  "https://conda.modular.com/max-nightly",
+  "https://repo.prefix.dev/modular-community",
+  "conda-forge",
+]
+```
+
+Then install the package with `pixi add professor`, or specify the desired
+version range in `pixi.toml`.
 
 ## Quick Start
+
+The following program profiles a small two-stage pipeline. The outer zone
+measures the complete operation; its children show where that time goes.
 
 ```mojo
 from professor import GlobalProfiler, WallClock
 
-comptime Prof = GlobalProfiler[WallClock]
 
-def parse(input: String) -> Int:
-    with Prof.zone["parse"](bytes=UInt64(input.byte_length())):
-        var result = 0
-        for codepoint in input.codepoints():
-            result += Int(codepoint.is_ascii_digit())
-        return result
+comptime Prof = GlobalProfiler[WallClock, Tag="quickstart"]
 
 
 def main() raises:
     Prof.start()
-    var count = parse("professor v0.1")
+
+    var checksum = 0
+    for batch in range(20):
+        with Prof.zone["pipeline"]():
+            var values = List[Int]()
+
+            with Prof.zone["prepare"]():
+                for i in range(50_000):
+                    values.append((i * 17 + batch) % 997)
+
+            with Prof.zone["aggregate"]():
+                for value in values:
+                    checksum += value
+
     Prof.end()
 
-    print("digits:", count)
+    print("checksum:", checksum)
     print(Prof.report())
 ```
 
-Run it from a clone of this repository:
+Save it as `quickstart.mojo` and run it with profiling enabled:
 
 ```sh
-pixi run mojo run -D PROFESSOR_PROFILE -I src my_program.mojo
+pixi run mojo run -D PROFESSOR_PROFILE quickstart.mojo
 ```
 
-The define must appear before the source path. Arguments after
-`my_program.mojo` are passed to the program rather than the compiler.
-
-### Compile-time switch
-
-Profiling is opt-in. `-D PROFESSOR_PROFILE` enables profiler state, sampling,
-site registration, and lifecycle checks for the whole program. Without the
-define, `Profiler` has zero-sized storage and `start()`, `end()`, `reset()`,
-and both forms of `zone()` compile to no-ops. `GlobalProfiler` does not create
-its global state. `report()` returns an empty, unrendered report.
-
-The same instrumented source can therefore be used for profiling and normal
-builds:
-
-```sh
-# Profiling enabled
-pixi run mojo run -D PROFESSOR_PROFILE -I src my_program.mojo
-
-# Profiling compiled out
-pixi run mojo run -I src my_program.mojo
-```
-
-`Profiler.is_enabled()` and `GlobalProfiler.is_enabled()` expose the build mode
-for code that should only run when a report is available:
-
-```mojo
-comptime if Prof.is_enabled():
-    print(Prof.report())
-```
-
-A zone is opened with a semantic label and closed explicitly. The zone handle
-is a _linear_ value: the compiler forces you to consume it with
-`zone^.close()`, so a forgotten close is a compile error, not a silent
-measurement bug.
-
-`Prof.start()` and `Prof.end()` bracket the program-wide measurement interval.
-`Prof.report()` prints its total plus per-zone hit count, inclusive and
-exclusive metrics, inclusive time per hit, and inclusive percentage of the
-program total. A zone supplied with `bytes=` also reports aggregate processed
-data. Time metric tables additionally report inclusive throughput. Recursive
-zones are accounted for correctly.
-
-For a complete worked example — a JSON parser computing haversine distances,
-with zones around parsing, tokenization, and computation — see
-[`examples/haversine`](examples/haversine):
-
-```sh
-pixi run -e examples haversine-generate
-pixi run -e examples haversine-profile
-```
-
-![Haversine profiler report with per-zone timings and color-coded percentages](assets/haversine-profile.png)
-
-## Repetition Testing
-
-`RepetitionTester` repeatedly measures a function or capturing closure and
-stops after a configured number of calls in non-improving batches:
-
-```mojo
-from professor import RepetitionTester, WallClock
-
-
-def read_file() raises:
-    ...
-
-
-def main() raises:
-    var tester = RepetitionTester(
-        WallClock(),
-        patience=10,
-        batch_reps=10,
-        max_reps=1_000,
-    )
-    _ = tester.run(read_file)
-```
-
-Here `patience=10` means ten consecutive repetitions without improvement,
-not ten total repetitions. `batch_reps` groups calls under one measurement and
-`max_reps` is an optional hard limit on total calls. The tester owns the
-instrument, samples it immediately before and after each batch, then updates
-the component-wise minimum and maximum. The final table computes each average
-from the exact accumulated total and repetition count.
-
-On a terminal, the current statistics redraw in place beneath the spinner.
-Redirected output receives only the final table. `run()` returns the accumulated
-`RepetitionResults`.
-
-## Profile Zones
-
-### Creating profilers
-
-`Profiler` is a runtime value that owns its instrument, measurements, and zone
-registry. Separate values are independent, even when they have the same type:
-
-```mojo
-from professor import Profiler, WallClock
-
-var parsing_profiler = Profiler[WallClock]()
-var compute_profiler = Profiler[WallClock, Capacity=16]()
-```
-
-Pass an instrument to initialize a profiler with runtime configuration:
-
-```mojo
-var profiler = Profiler[MyInstrument](MyInstrument(config))
-```
-
-Use `GlobalProfiler` when zones spread across functions or modules and should
-write into one program-wide profiler. It is a static facade over a globally
-stored `Profiler`; `Tag` distinguishes global instances.
-
-Conventionally you declare your profilers once, in a `profile.mojo` file, and
-import them wherever you instrument:
-
-```mojo
-# profile.mojo
-from professor import GlobalProfiler, WallClock
-
-comptime MyProfiler = GlobalProfiler[WallClock, Tag="application"]
-```
-
-```mojo
-# main.mojo
-from profile import MyProfiler
-
-
-def do_work() -> Int:
-    var zone = MyProfiler.zone["do_work"]()
-    var result = ...  # do the work
-    zone^.close()
-    return result
-```
-
-### Zones, nesting, and error paths
-
-Zones can also be scoped with a `with` statement, which closes them
-automatically when the block exits — including on the unwind path of a
-raising body:
-
-```mojo
-def compute(pairs: Value) raises -> Float64:
-    with MyProfiler.zone["compute"]():
-        return _compute(pairs)
-```
-
-Zones nest, and must close in LIFO order — Professor aborts on a mismatched close.
-When you hold the zone as a linear value instead, every control-flow path must
-consume it; in raising code, close the zone before propagating the error:
-
-```mojo
-def compute(pairs: Value) raises -> Float64:
-    var zone = MyProfiler.zone["compute"]()
-    var result: Float64
-    try:
-        result = _compute(pairs)
-    except error:
-        zone^.close()
-        raise error^
-    zone^.close()
-    return result
-```
-
-Prefer `with` unless you need to close the zone somewhere other than the end
-of a scope.
-
-Each `zone["label"]()` call site gets its own anchor, resolved at runtime from the label and call location.
-For hot paths where even that lookup matters, you can pin the anchor at compile time:
-
-```mojo
-var zone = MyProfiler.zone["hot_loop", 3]()  # anchor index chosen by you
-```
-
-### Reading the report
-
-Call `start()` before opening any zones and `end()` after the last zone closes.
-`report()` then returns a `Report` you can print or inspect. Printing writes the
-program total and an aligned table to standard output with the zone's semantic
-name, call site relative to the project root, hit count, inclusive
-and exclusive metrics, inclusive metric per hit, and inclusive percentage of
-the program total. On a color terminal the header is bold and the percentage is
-colored: red at 50% or above, yellow at 20% or above, and green below 20%.
-Redirected output stays plain text.
-
-For each zone the report currently includes:
-
-- `count`: how many times the zone closed.
-- `inclusive`: metric accumulated while the zone was open, children included.
-- `exclusive`: inclusive minus the metric attributed to nested zones.
-- `inclusive_min`: minimum inclusive metric across invocations.
-- `loc`: source file, line, and column for the profiling call site.
-- `processed_data`: processed bytes for workload-annotated zones.
-
-Pass a byte count as `UInt64` to record a zone's logical workload:
-
-```mojo
-with MyProfiler.zone["parse"](bytes=UInt64(input.byte_length())):
-    parse(input)
-```
-
-When the amount of work is learned inside the scope, bind the workload handle
-and add bytes to its invocation-local accumulator:
-
-```mojo
-with MyProfiler.zone["read"](bytes=UInt64(0)) as zone:
-    var count = read_some_data()
-    zone.add_bytes(UInt64(count))
-```
-
-Bytes are summed across every invocation, including recursive invocations.
-They remain reportable when the profiler is switched to an instrument that has
-no time component. For every elapsed-time component, throughput is derived as
-aggregate processed bytes divided by aggregate inclusive time. A zero-time
-interval reports `N/A`; a nonzero interval with zero bytes reports zero.
-Ordinary zones use a separately specialized handle and carry no byte state.
-
-The report's `total` field contains the metric elapsed between `start()` and
-`end()`.
-
-`end()` and `report()` raise if any zone is still open, because exclusive
-metrics are transiently inconsistent while a zone is in flight. `report()`
-also requires a completed start/end interval. Additional distribution
-statistics such as variance are on the roadmap.
-
-### Scalar and composite metrics
-
-A metric can be one supported scalar quantity (`Time`, `Count`, or `DataSize`)
-or a flat composite whose immediate fields are those scalar quantities. When a
-reading has several components, such as cycles and retired instructions, the
-report prints one table per component, each titled with that component's
-program total.
-
-Separate tables rather than stacked rows, because the interesting comparison
-is down a column — which zone dominates _this_ metric — and the answer differs
-per metric: the cycles-hot zone and the cache-miss-hot zone need not be the
-same. Each table can therefore also be read, and eventually sorted, along its
-own axis. Percentages are computed per component, each against the
-corresponding component of the program total.
-
-Scalar components encode their storage unit as a compile-time parameter
-without adding instance storage:
-
-```mojo
-@fieldwise_init
-struct CpuMetric(Metric):
-    var elapsed: Time[TimeUnit.Nanos]
-    var cycles: Count["cycles"]
-    var instructions: Count["instructions"]
-    var cache_misses: Count["cache-misses"]
-```
-
-That is the entire composite definition. Professor validates that every field
-is scalar and derives zero construction, delta, accumulation, extrema, and
-report decomposition with compile-time reflection. Nested composites, opaque
-fields, and metadata fields are rejected. The composite above occupies four
-`UInt64` values; unit names and scales are materialized only while building a
-report. `Nanos` and `Cycles` remain aliases for `Time[TimeUnit.Nanos]` and
-`Count["cycles"]`. `TimestampCounter` uses `Count["tsc_ticks"]`, keeping timestamp
-counter ticks distinct from PMU cycles.
-
-Storage units do not force display units. Each numeric report column chooses
-one display unit from its complete set of values, using decimal SI prefixes for
-data sizes and throughput. Units appear in column headers. Numbers group
-thousands with `,`, separate decimals with `.`, and keep at most two
-fractional digits. Choose a different decimal count when constructing the
-report:
-
-```mojo
-from professor import ReportFormat
-
-var report = Prof.report(ReportFormat(max_decimals=3))
-```
-
-Choose and order the table columns by passing an explicit list. `Zone` must
-appear exactly once because it identifies the measurement represented by each
-row; duplicate columns and lists without `Zone` are rejected when the report is
-built:
-
-```mojo
-from professor import ReportColumn, ReportFormat
-
-var report = Prof.report(
-    ReportFormat(
-        columns=[
-            ReportColumn.Zone,
-            ReportColumn.Count,
-            ReportColumn.Inclusive,
-            ReportColumn.InclusivePercentage,
-        ]
-    )
-)
-```
-
-The supplied order is the display order and selection affects both terminal
-and CSV tables without removing data from `Report.stats`. Omitting `columns`
-retains the default report. An explicit empty list is invalid. Processed data
-is omitted when no zone records a workload; throughput is additionally omitted
-from non-time metric tables. The remaining requested columns keep their
-relative order.
-
-A metric with one component yields exactly one table. Anonymous time and data
-scalars use `Program total:`; a scalar `Count` uses its event kind as the table
-identity.
-
-### Table customization
-
-`Report.tables()` returns copies of the rendered tables for inspection or
-custom rendering. Table types live in the explicit `professor.report.table`
-module:
-
-```mojo
-from professor.report.table import ColorMode
-
-var tables = Prof.report().tables()
-tables[0].style.color = ColorMode.Never
-print(tables[0])
-```
-
-Write a table as CSV by supplying its destination. The caller owns file
-creation and lifetime:
-
-```mojo
-with open("profile.csv", "w") as file:
-    tables[0].write_csv_to(file)
-```
-
-### Custom instruments
-
-Wall-clock time is the default metric. A custom source implements `Instrument`
-and returns either a supported scalar quantity or a flat `Metric` composite:
-
-```mojo
-from professor import Count, Profiler, Instrument, Metric, Nanos
-
-
-@fieldwise_init
-struct MyMetric(Metric):
-    var elapsed: Nanos
-    var events: Count["my-events"]
-
-
-struct MyInstrument(Instrument):
-    comptime MetricType = MyMetric
-
-    def __init__(out self):
-        ...
-
-    def measure(mut self) -> Self.MetricType:
-        ...
-
-
-var profiler = Profiler[MyInstrument](MyInstrument())
-```
-
-Field names are stable report identities; the scalar type supplies the quantity
-kind, storage unit, and canonical scale. `Count` also carries an event kind,
-which remains independent of the field name. Metric arithmetic is internal and
-`Metric` does not require `Writable`.
-
-One caveat: zone open and close are on the measurement's hot path and are
-non-raising. An `Instrument` that can fail (for example, one that talks to the
-OS) must handle or `abort` on errors inside `measure()` rather than raise.
-
-## OS Performance Counters
-
-Beyond timing, Professor gives you access to the operating system's
-performance-counter machinery:
-
-- **Apple Silicon / macOS**: the private `kperf` and `kperfdata` frameworks —
-  implemented today, documented below.
-- **Linux**: owned `perf_event_open` counters and groups — implemented.
-- **Windows**: will follow when Mojo supports the platform.
-
-Each tool has tradeoffs.
-Some counters are precise but privileged.
-Some timing sources are cheap but explain less.
-Some APIs are powerful but platform specific.
-Professor wraps them in safer Mojo APIs -- owned handles, typed events,
-automatic event-to-counter mapping -- so you can use them directly or
-plug them into profile zones as custom measurers.
-
-## Linux perf-event Backend
-
-Linux counters can be measured independently or as an atomically controlled
-group. Standalone counters are always opened from a `CounterConfig`:
-
-```mojo
-from professor.os.linux import Counter, CounterConfig, PerfEvent
-
-var counter = Counter(CounterConfig(PerfEvent.CpuCycles))
-```
-
-Groups reuse the same configuration type for each member, while the builder
-owns the process, CPU, and descriptor settings shared by the kernel group:
-
-```mojo
-from professor.os.linux import (
-    CounterConfig,
-    CountMode,
-    GroupBuilder,
-    PerfEvent,
-)
-
-var builder = GroupBuilder()
-var cycles = builder.add(CounterConfig(PerfEvent.CpuCycles))
-var instructions = builder.add(
-    CounterConfig(
-        PerfEvent.Instructions,
-        mode=CountMode.Userspace | CountMode.Kernel,
-    )
-)
-var group = builder^.build()
-
-group.enable()
-# measured work
-group.disable()
-
-var counts = group.read()
-print(counts[cycles], counts[instructions])
-```
-
-`Group` owns every event descriptor. The opaque tokens returned by `add()`
-identify results without exposing individual grouped-counter control.
-
-## Apple kperf Backend
-
-The current backend targets Apple Silicon on macOS. It wraps hardware
-performance counters, including events such as cycles, retired instructions,
-cache misses, and branch behavior — the same private `kperf`, KPC, and KPEP
-machinery that powers Instruments and `xctrace`.
-
-> **Important:** this backend is macOS-only, Apple-Silicon-only, and requires
-> `sudo`. Apple's `kperf.framework` and `kperfdata.framework` are private:
-> Apple publishes no headers, documentation, or ABI guarantees for them. This
-> project relies on layouts and behavior reverse engineered by others (see
-> [Acknowledgments](#acknowledgments)). A macOS update can break the bindings
-> or change counter semantics.
-
-### Quick start
-
-Run the safe sampler example:
-
-```sh
-sudo pixi run mojo run -I src examples/apple/sampler.mojo
-```
-
-Minimal usage looks like this:
-
-```mojo
-from std.benchmark import black_box
-
-from professor.os.apple import Sampler, PortableEvent
-
-
-def main() raises:
-    var sampler = Sampler()
-    var thread = sampler.thread(
-        [PortableEvent.Cycles, PortableEvent.Instructions]
-    )
-
-    thread.start()
-
-    var before = thread.sample()
-
-    var result = 0
-    for i in range(100):
-        result = black_box(result + i)
-
-    var after = thread.sample()
-    thread.stop()
-
-    for i in range(thread.event_count()):
-        print(thread.event_names()[i], after[i] - before[i])
-```
-
-`Sampler` opens the event database, acquires the counters from `powerd`, and
-restores the previous force-counter state when released or destroyed.
-
-`ThreadSampler` programs the selected counters, starts global and per-thread
-counting, reads raw KPC values, and returns them **in the order you requested
-the events** — if you ask for `[Cycles, Instructions]`, index `0` is cycles —
-not in raw hardware-slot order.
-
-### What the hardware provides
-
-Each Apple Silicon CPU core has a performance monitoring unit (PMU) that
-counts hardware events: cycles, instructions, cache misses, branches, stalls,
-and similar microarchitectural activity.
-
-The PMU exposes physical **counter registers**. Some are _fixed_ — they always
-count one event (`FIXED_CYCLES`, `FIXED_INSTRUCTIONS`), so there is nothing to
-program. Others are _configurable_ — each has a corresponding **config
-register** that encodes which event to count and in which mode (userspace
-only, or all modes).
-
-The distinction to keep in mind:
-
-- Counter register: the value being counted.
-- Config register: the program that tells a configurable counter what to
-  count.
-
-### The kperf system
-
-Apple exposes the PMU through three related private layers, and Professor uses
-all three:
-
-- **KPC** (Kernel Performance Counters), in `kperf.framework`, is the
-  low-level counter interface: discover counter classes, program KPC config
-  registers, start counting, read per-thread or per-CPU values.
-- **KPERF**, also in `kperf.framework`, is the timer and action sampling
-  subsystem: sampler sets, action filters, timer periods, tick conversions.
-- **KPEP**, in `kperfdata.framework`, is the event database and config
-  builder: it loads the per-CPU event database, maps names such as
-  `FIXED_CYCLES` to hardware selectors, and produces KPC config words.
-
-The flow is: KPEP decides which KPC registers and counter slots an event
-needs; KPC programs and reads the counters; Professor owns the handles and
-translates raw hardware slots back into the event order requested by Mojo
-code.
-
-### Choosing events
-
-Use `PortableEvent` for events available across all supported Apple Silicon
-generations:
-
-```mojo
-PortableEvent.Cycles
-PortableEvent.Instructions
-PortableEvent.L1DCacheMissLd
-PortableEvent.CoreActiveCycle
-```
-
-Portable events store the kpep event name and are resolved against the runtime
-database. CPU-specific event sets are also exposed as `AppleEvent` (every
-event seen on any Apple Silicon) and `M1Event` through `M5Event` (events for a
-specific generation).
-
-If an event is not available for the current CPU, lookup raises instead of
-passing an unchecked string to the C API. To inspect what the current machine
-exposes:
-
-```sh
-sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
-```
-
-### Count modes
-
-`ConfigBuilder.add_event()` defaults to userspace-only counting. Pass
-`CountMode.AllModes` to include kernel and system execution attributed to the
-thread:
-
-```mojo
-from professor.os.apple import CountMode
-
-cfg.add_event(
-    db.get_event(PortableEvent.Instructions),
-    mode=CountMode.AllModes,
-)
-```
-
-Userspace-only mode filters which instructions count; it does not prevent the
-thread from being interrupted or scheduled away. For short measurements, take
-several samples and use the minimum — it is usually the sample least disturbed
-by scheduler and system activity.
-
-### Cleanup
-
-```mojo
-thread.stop()
-sampler.release()
-```
-
-`ThreadSampler.stop()` disables per-thread counting for the current thread.
-`Sampler.release()` restores the previous force-counter state; the destructor
-also restores it if you forget, but explicit release is clearer in
-long-running programs.
-
-The safe API deliberately does not clear _global_ counting in its destructor:
-global counting is shared kernel state, and clearing it could break another
-sampler or profiler.
-
-### Lower-level configuration
-
-Use `Database` and `ConfigBuilder` when you need to inspect or build a
-configuration yourself:
-
-```mojo
-from professor.os.apple import Database, ConfigBuilder, PortableEvent
-
-
-var db = Database()
-var cfg = ConfigBuilder(db)
-
-cfg.force_counters()
-cfg.add_event(db.get_event(PortableEvent.Cycles))
-cfg.add_event(db.get_event(PortableEvent.Instructions))
-
-var configuration = cfg.build()
-```
-
-`Database` owns the kpep database handle. `ConfigBuilder` is tied to that
-database's lifetime because Apple's config object stores pointers into it.
-
-`cfg.force_counters()` must run before the first `add_event()` on Apple
-Silicon; without it, kpep rejects configurable-counter events with a
-counter-not-forced error.
-
-`build()` copies the runtime data into an owned `Configuration`:
-
-- `classes`: the KPC classes that must be enabled.
-- `registers`: raw KPC config words produced by kpep.
-- `counter_map`: event index to hardware counter slot.
-- `event_names`: configured event names in request order.
-- `hardware_counter_count`: raw values needed per KPC read.
-
-This is the data `ThreadSampler` uses internally.
-
-### Internals: KPC classes, programming, and reading
-
-KPC groups physical PMU registers into classes. The important Apple Silicon
-ones are `Classes.Fixed` (fixed counters such as cycles and instructions) and
-`Classes.Configurable` (PMU counters programmed for selected events). kpep
-computes the required class mask for the events you add; you should not track
-it by hand.
-
-Fixed counters need no config-register entries — their event is already fixed
-— but their class must still be enabled when counting starts; a fixed counter
-reads as zero forever otherwise. Configurable counters do need config-register
-entries: those are not measurements, they are the hardware programming words.
-
-The raw KPC sequence is:
+The timings vary by machine, but the rendered report has this form:
 
 ```text
-kpc_force_all_ctrs_set(1)
-kpc_set_config(classes, registers)
-kpc_set_counting(classes)
-kpc_set_thread_counting(classes)
-kpc_get_thread_counters(0, count, buffer)
+checksum: 497857452
+Program total: 1.89 ms
+
+Zone       Site                            Count  Inclusive (ms)  Exclusive (ms)  Inclusive Min. (us)  Inclusive / Iter. (us)  Inclusive (%)  Exclusive (%)
+---------  ------------------------------  -----  --------------  --------------  -------------------  ----------------------  -------------  -------------
+pipeline   examples/quickstart.mojo:12:35     20            1.88               0                   86                   94.15          99.8%           0.2%
+prepare    examples/quickstart.mojo:15:38     20            1.49            1.49                   67                   74.45          78.9%          78.9%
+aggregate  examples/quickstart.mojo:19:40     20            0.39            0.39                   19                   19.55          20.7%          20.7%
 ```
 
-Global counting starts the hardware counters; per-thread counting tells the
-kernel which globally-running classes to shadow into per-thread storage. The
-effective per-thread set is `global_counting & thread_counting`.
-`kpc_get_thread_counters` returns raw hardware slots;
-`Configuration.counter_map` translates them back to the event order you
-requested.
+The `-D PROFESSOR_PROFILE` define must appear before the source path. Arguments
+after the path belong to the program rather than the compiler.
 
-### System bindings
+`start()` and `end()` delimit the program-wide measurement interval. Zones
+inside that interval sample `WallClock` when they open and close, then
+`report()` aggregates all invocations at each call site.
 
-The direct system bindings live under
-[`src/professor/os/apple/sys/`](src/professor/os/apple/sys/):
+The repository keeps this program in `examples/quickstart.mojo` and tests it
+with profiling both enabled and disabled.
 
-- `kperf.mojo` binds KPC and kperf functions.
-- `kperf_data.mojo` binds kpep database and configuration functions.
+## Reading the Report
 
-Private framework symbols are resolved at runtime with `dlopen`/`dlsym`
-instead of linking against private SDK symbols. The bindings are based on
-reverse-engineered interfaces, so struct layouts and function behavior must be
-treated as unstable.
+Each row identifies a zone and its source location, then reports how often that
+site ran. Inclusive values contain nested work; exclusive values subtract it.
+The report also shows the minimum and average inclusive value per invocation.
 
-Use the system-binding examples only when debugging the wrapper or exploring
-Apple's raw interfaces:
+The parent `pipeline` is almost the full program interval, but has little
+exclusive time. Its children explain the cost. Since `prepare` takes roughly
+four times as long as `aggregate`, optimization should begin there.
 
-```sh
-sudo pixi run mojo run -I src examples/apple/sys/measure.mojo
-sudo pixi run mojo run -I src examples/apple/sys/kperf_data.mojo
-```
+Percentages can overlap when zones nest, so they are not expected to sum to
+100%. Read parent and child rows as a hierarchy of attribution, not as unrelated
+slices of a pie chart.
 
-For normal measurement code, prefer `Sampler` and `ThreadSampler`.
+Processed-data and throughput columns appear when zones include workload sizes.
+See [Reports](docs/reports.md) for every column, format selection, composite
+metrics, and CSV export.
 
-### Measurement noise
+## Profiling Zones
 
-Anything inside the before/after window gets counted — string formatting,
-printing, allocation, syscall setup. This version measures only the work:
+A profile zone marks a meaningful region of the program. Professor aggregates
+every invocation of that zone, recording both how often it runs and how much of
+the selected metric it consumes.
+
+Use a scoped zone when the measurement follows a lexical block:
 
 ```mojo
-var before = thread.sample()
-var value = work_to_measure()
-var after = thread.sample()
-print(value)
+with Prof.zone["parse"]():
+    parse_input()
 ```
 
-Moving the `print` before the second `sample()` makes it part of the
-measurement, and the difference can be large for short regions. Keep the
-window narrow, avoid I/O inside it, and sample repeatedly.
+Zones can nest, allowing a report to distinguish the total cost of an operation
+from the work performed by its children:
 
-### Counters inside profile zones
+```mojo
+with Prof.zone["parse"]():
+    with Prof.zone["tokenize"]():
+        tokenize(input)
+    build_value()
+```
 
-The sampler works for standalone coarse measurements, but you can also feed
-counters into the instrumentation profiler by wrapping a `ThreadSampler` in a
-custom `Instrument` whose `Metric` carries, say, cycles and instructions per
-zone. The one constraint, as noted above, is that `measure()` is on the
-profiler's non-raising hot path, so kperf errors must abort rather than raise.
-A ready-made counter-backed measurer is on the roadmap.
+`start()` and `end()` define the complete profiling interval. All zones must
+close before the session ends and before a report is produced.
 
-## Roadmap
+Profiling is enabled with `-D PROFESSOR_PROFILE`. Without the define, profiler
+storage and zone handles are zero-sized, and profiling operations become
+no-ops.
 
-Instrumentation profiler:
+See [Profiling Zones](docs/profiling-zones.md) for profiler ownership,
+explicitly closed zones, indexed sites, processed data, and lifecycle rules.
 
-- Richer reports: per-zone min/max/mean/variance and bottleneck summaries.
-- A `TimestampCounter` instrument (cheap invariant TSC timing) next to
-  `WallClock`.
-- A ready-made hardware-counter `Instrument` for the Apple backend.
-- Eventually, decorator ergonomics as language support arrives:
+## Going Deeper
 
-  ```mojo
-  @professor.measure("do_work")
-  def do_work() -> Int: ...
-  ```
+Professor is parameterized by an `Instrument`. `WallClock` measures elapsed
+nanoseconds, while `TimestampCounter` reads an invariant architecture counter.
+Custom instruments can return time, counts, data sizes, or a flat composite.
 
-Backends:
+Composite metrics produce one report table per component. This lets the same
+zones tell different stories: a waiting zone may dominate wall time while a
+compute-heavy zone dominates cycles.
 
-- Apple Silicon/macOS: `kperf`, KPC, and KPEP access to hardware performance
-  counters. Implemented.
-- Linux: owned `perf_event_open` counters, heterogeneous groups, atomic reads,
-  and multiplexing correction are implemented. See
-  [`docs/linux-perf-event-status.md`](docs/linux-perf-event-status.md).
-- x86_64: `rdtsc`/`rdtscp` timing support. Not implemented.
-- AArch64: user-readable `*_EL0` counter registers where the OS enables them.
-  Not implemented.
-- Windows: when Mojo supports the platform.
-- Other operating-system and ISA-specific backends where they are useful.
+See [Custom Instruments](docs/custom-instruments.md) for the measurement
+contract and supported metric shapes.
+
+Professor also provides typed, owned wrappers around Linux `perf_event` groups
+and Apple Silicon counters. Their permissions, overhead, and stability differ;
+read [Hardware Counters](docs/hardware-counters.md) before using them.
+
+For microbenchmarks, `RepetitionTester` repeats a workload until its measured
+components stop finding better minima. It shares the instrument model but
+answers a different question from zone profiling.
+
+See [Repetition Testing](docs/repetition-testing.md) for stopping rules,
+batching, and result interpretation.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Profiling zones](docs/profiling-zones.md)
+- [Reports](docs/reports.md)
+- [Custom instruments](docs/custom-instruments.md)
+- [Hardware counters](docs/hardware-counters.md)
+- [Repetition testing](docs/repetition-testing.md)
+
+Browse `examples/` for complete programs that exercise the library.
+
+## Compatibility
+
+Professor's package and test environments currently target these platforms:
+
+| Capability | Platforms | Notes |
+| --- | --- | --- |
+| Zone profiling and reports | macOS ARM64, Linux x86-64, Linux ARM64 | Uses portable wall-clock timing by default. |
+| Linux performance counters | Linux x86-64 and ARM64 | Access depends on the host's `perf_event` policy. |
+| Apple performance counters | Apple Silicon macOS | Uses private frameworks and requires elevated privileges. |
+
+Professor follows Mojo closely. Let Pixi resolve the compiler version required
+by the package; source development uses the version pinned in
+[`pixi.toml`](pixi.toml).
+
+Version `0.1` is usable but pre-stable. The core profiling workflow is tested,
+while public APIs may change between minor releases. OS performance-counter
+APIs should be treated as experimental.
+
+## Project Status
+
+Professor is under active development. Current behavior is covered by tests on
+the repository's supported targets, but pre-stable releases may revise public
+interfaces as Mojo evolves.
+
+Use [GitHub issues](https://github.com/gsmyridis/professor/issues) for confirmed
+bugs and planned work. A failing example should include the Mojo version,
+platform, command, and complete error message.
 
 ## Acknowledgments
 
-Apple's kperf machinery is private and undocumented; this project stands on
-the reverse-engineering work of others, notably
-[ibireme's `kpc_demo.c`](https://gist.github.com/ibireme/173517c208c7dc333ba962c1f0d67d12)
-and [Dougall Johnson's Apple Silicon CPU research](https://github.com/dougallj/applecpu).
+Professor's Apple counter support builds on reverse-engineering work including
+[ibireme's `kpc_demo.c`](https://gist.github.com/ibireme/173517c208c7dc333ba962c1f0d67d12).
+
+It also relies on
+[Dougall Johnson's Apple Silicon CPU research](https://github.com/dougallj/applecpu).
+
+## License
+
+Professor is available under the [MIT License](LICENSE).

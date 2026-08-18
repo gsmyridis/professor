@@ -1,11 +1,11 @@
-"""This is a smoke test to verify that the package is built and imported correctly."""
+"""Smoke test that Professor can be imported from the installed package."""
 
 from professor import GlobalProfiler, WallClock
 
 comptime Profiler = GlobalProfiler[WallClock]
 
 
-def main():
+def main() raises:
     Profiler.start()
 
     var list = List[Int]()
@@ -19,5 +19,4 @@ def main():
             sum += element
 
     Profiler.end()
-    var report = Profiler.report()
-    print(report)
+    print(Profiler.report())

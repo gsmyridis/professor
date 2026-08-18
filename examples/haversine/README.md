@@ -6,26 +6,25 @@ haversine distance with a small Mojo JSON parser.
 Generate an input file:
 
 ```sh
-pixi run -e examples haversine-generate \
-  10000 --radius 6372.8 --output examples/haversine/data/pairs.json
+pixi run -e examples haversine-generate
 ```
 
 Check the generated result with Python:
 
 ```sh
-pixi run -e examples haversine-calculate examples/haversine/data/pairs.json
+pixi run -e examples haversine-calculate
 ```
 
 Run the Mojo version from the repository root:
 
 ```sh
-pixi run -e examples haversine-profile examples/haversine/data/pairs.json
+pixi run -e examples haversine-profile
 ```
 
 Run its parser tests:
 
 ```sh
-pixi run -e examples test-haversine-parser
+pixi run -e examples haversine-test-parser
 ```
 
 `parser.mojo` keeps the Rust example's `Token`, `Tokenizer`, `Value`, and

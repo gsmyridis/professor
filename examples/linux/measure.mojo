@@ -8,7 +8,12 @@ Access to performance counters depends on the host's perf security policy.
 """
 
 from std.benchmark import black_box
-from professor.os.linux import CounterConfig, GroupBuilder, PerfEvent
+from professor.os.linux import (
+    CounterConfig,
+    CounterToken,
+    GroupBuilder,
+    PerfEvent,
+)
 
 comptime ELEMENT_COUNT = 1 << 20
 comptime POINTER_STRIDE = 8191
@@ -37,11 +42,22 @@ def measure() raises:
     var data = _make_pointer_chase()
 
     var builder = GroupBuilder()
-    var cycles_token = builder.add(CounterConfig(PerfEvent.CpuCycles))
-    var instructions_token = builder.add(CounterConfig(PerfEvent.Instructions))
-    var l1d_read_misses_token = builder.add(
-        CounterConfig(PerfEvent.L1DReadMiss)
-    )
+    var cycles_token: CounterToken
+    var instructions_token: CounterToken
+    var l1d_read_misses_token: CounterToken
+    try:
+        cycles_token = builder.add(CounterConfig(PerfEvent.CpuCycles))
+        instructions_token = builder.add(CounterConfig(PerfEvent.Instructions))
+        l1d_read_misses_token = builder.add(
+            CounterConfig(PerfEvent.L1DReadMiss)
+        )
+    except error:
+        # Consume the explicit-destroy builder even when event setup fails.
+        try:
+            _ = builder^.build()
+        except:
+            pass
+        raise error^
     var group = builder^.build()
     group.reset()
     group.enable()
