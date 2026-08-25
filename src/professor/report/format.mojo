@@ -1,23 +1,23 @@
 struct ReportColumn(Equatable, ImplicitlyCopyable, Writable):
     """Identity of a selectable profiler report column."""
 
-    comptime Zone = Self(_code=1)
-    comptime Site = Self(_code=2)
-    comptime Count = Self(_code=3)
-    comptime Inclusive = Self(_code=4)
-    comptime Exclusive = Self(_code=5)
-    comptime InclusiveMin = Self(_code=6)
-    comptime InclusiveAverage = Self(_code=7)
-    comptime ProcessedData = Self(_code=8)
-    comptime Throughput = Self(_code=9)
-    comptime InclusivePercentage = Self(_code=10)
-    comptime ExclusivePercentage = Self(_code=11)
+    comptime Zone = Self(_value=1)
+    comptime Site = Self(_value=2)
+    comptime Count = Self(_value=3)
+    comptime Inclusive = Self(_value=4)
+    comptime Exclusive = Self(_value=5)
+    comptime InclusiveMin = Self(_value=6)
+    comptime InclusiveAverage = Self(_value=7)
+    comptime ProcessedData = Self(_value=8)
+    comptime Throughput = Self(_value=9)
+    comptime InclusivePercentage = Self(_value=10)
+    comptime ExclusivePercentage = Self(_value=11)
 
-    var _code: UInt8
+    var _value: UInt8
 
     @doc_hidden
-    def __init__(out self, *, _code: UInt8):
-        self._code = _code
+    def __init__(out self, *, _value: UInt8):
+        self._value = _value
 
     @staticmethod
     def all() -> List[Self]:
@@ -64,8 +64,8 @@ struct ReportColumn(Equatable, ImplicitlyCopyable, Writable):
 
     def _is_supported(self) -> Bool:
         return (
-            self._code >= Self.Zone._code
-            and self._code <= Self.ExclusivePercentage._code
+            self._value >= Self.Zone._value
+            and self._value <= Self.ExclusivePercentage._value
         )
 
     def write_to(self, mut writer: Some[Writer]):

@@ -13,18 +13,21 @@ comptime _DOUBLE_SPACE = _SPACE * 2
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct Align(Equatable, ImplicitlyCopyable):
     """Horizontal alignment of a value within its column."""
 
     var _value: Int
 
-    comptime Left = Self(0)
+    comptime Left = Self(_value=0)
     """Align text to the left."""
-    comptime Right = Self(1)
+    comptime Right = Self(_value=1)
     """Align text to the right."""
-    comptime Center = Self(2)
+    comptime Center = Self(_value=2)
     """Align text to the center."""
+
+    @doc_hidden
+    def __init__(out self, *, _value: Int):
+        self._value = _value
 
 
 # ===----------------------------------------------------------------------=== #
@@ -32,7 +35,6 @@ struct Align(Equatable, ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct Color(Equatable, ImplicitlyCopyable, Writable):
     """An ANSI foreground color.
 
@@ -44,16 +46,20 @@ struct Color(Equatable, ImplicitlyCopyable, Writable):
 
     var _code: Int
 
-    comptime Default = Self(0)
-    comptime Black = Self(30)
-    comptime Red = Self(31)
-    comptime Green = Self(32)
-    comptime Yellow = Self(33)
-    comptime Blue = Self(34)
-    comptime Magenta = Self(35)
-    comptime Cyan = Self(36)
-    comptime White = Self(37)
-    comptime Gray = Self(90)
+    comptime Default = Self(_code=0)
+    comptime Black = Self(_code=30)
+    comptime Red = Self(_code=31)
+    comptime Green = Self(_code=32)
+    comptime Yellow = Self(_code=33)
+    comptime Blue = Self(_code=34)
+    comptime Magenta = Self(_code=35)
+    comptime Cyan = Self(_code=36)
+    comptime White = Self(_code=37)
+    comptime Gray = Self(_code=90)
+
+    @doc_hidden
+    def __init__(out self, *, _code: Int):
+        self._code = _code
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(_ESC, self._code, "m")
@@ -64,17 +70,20 @@ struct Color(Equatable, ImplicitlyCopyable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct ColorMode(Equatable, ImplicitlyCopyable):
     """When a table is allowed to emit ANSI escape sequences."""
 
     var _value: Int
 
-    comptime Auto = Self(0)
+    comptime Auto = Self(_value=0)
     """Colorize only when standard output is a terminal."""
 
-    comptime Always = Self(1)
-    comptime Never = Self(2)
+    comptime Always = Self(_value=1)
+    comptime Never = Self(_value=2)
+
+    @doc_hidden
+    def __init__(out self, *, _value: Int):
+        self._value = _value
 
     def enabled(self) -> Bool:
         if self._value == 1:

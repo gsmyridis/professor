@@ -12,10 +12,6 @@ from professor.os.linux import (
 def test_flags_can_be_combined() raises:
     var flags = Flag.CloseOnExec | Flag.ContainerGroup
 
-    assert_equal(
-        flags.value,
-        Flag.CloseOnExec.value | Flag.ContainerGroup.value,
-    )
     assert_true(Flag.CloseOnExec in flags)
     assert_true(Flag.ContainerGroup in flags)
     assert_false(Flag.Output in flags)

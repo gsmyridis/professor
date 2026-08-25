@@ -49,16 +49,18 @@ struct CountMode(RegisterPassable):
     how `kperfdata` computes the counter configuration words for that event.
     """
 
-    comptime AllModes = Self(unsafe_flag=0)
+    comptime AllModes = Self(_value=0)
     """Counts event in all modes e.g. userspace, kernel, etc."""
 
-    comptime Userspace = Self(unsafe_flag=1)
+    comptime Userspace = Self(_value=1)
     """Counts event only for userspace code."""
 
-    var _flag: UInt32
+    var _value: UInt32
+    """Raw count-mode value expected by `kpep_config_add_event`."""
 
-    def __init__(out self, *, unsafe_flag: UInt32):
-        self._flag = unsafe_flag
+    @doc_hidden
+    def __init__(out self, *, _value: UInt32):
+        self._value = _value
 
 
 # ===-----------------------------------------------------------------------===
@@ -173,7 +175,7 @@ struct ConfigBuilder[origin: ImmOrigin](Movable):
             kpep_config_add_event(
                 self._ptr,
                 Pointer(to=event._ptr),
-                mode._flag,
+                mode._value,
                 Pointer(to=err),
             )
             != 0
@@ -273,7 +275,7 @@ struct ConfigBuilder[origin: ImmOrigin](Movable):
         if res != 0:
             raise Error("failed to read active KPC counter classes")
 
-        return Classes(unsafe_mask=classes)
+        return Classes(_mask=classes)
 
     def counter_map(self) raises -> List[Int]:
         """Returns the event index to hardware counter slot mapping."""

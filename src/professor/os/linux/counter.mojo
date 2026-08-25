@@ -235,7 +235,7 @@ def _open_event(
         c_int(process.value),
         c_int(cpu.value),
         group_leader_fd,
-        c_ulong(flag.value),
+        c_ulong(flag._mask),
     )
     if fd < 0:
         var err = get_errno()

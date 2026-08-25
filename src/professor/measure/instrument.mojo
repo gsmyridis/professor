@@ -23,15 +23,18 @@ trait Instrument(Defaultable, Deinitable, Movable):
 # ===-----------------------------------------------------------------------===
 
 
-@fieldwise_init
 struct MType(Equatable, ImplicitlyCopyable):
     """Closed scalar quantity families understood by Professor."""
 
-    var code: Int
+    var _value: Int
 
-    comptime Time = Self(0)
-    comptime Count = Self(1)
-    comptime DataSize = Self(2)
+    comptime Time = Self(_value=0)
+    comptime Count = Self(_value=1)
+    comptime DataSize = Self(_value=2)
+
+    @doc_hidden
+    def __init__(out self, *, _value: Int):
+        self._value = _value
 
 
 # ===-----------------------------------------------------------------------===

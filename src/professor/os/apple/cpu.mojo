@@ -8,7 +8,6 @@ from .sys.kperf import kpc_cpu_string
 # ===------------------------------------------------------------------------===
 
 
-@fieldwise_init
 struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Apple Silicon chip generation, as identified by `kpep_db.name`."""
 
@@ -16,21 +15,26 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime M1 = Self(1 << 0)
-    comptime M2 = Self(1 << 1)
-    comptime M3 = Self(1 << 2)
-    comptime M4 = Self(1 << 3)
-    comptime M5 = Self(1 << 4)
+    comptime M1 = Self(_mask=1 << 0)
+    comptime M2 = Self(_mask=1 << 1)
+    comptime M3 = Self(_mask=1 << 2)
+    comptime M4 = Self(_mask=1 << 3)
+    comptime M5 = Self(_mask=1 << 4)
 
     # ===--------------------------------------------------------------------===
     # Field
     # ===--------------------------------------------------------------------===
 
-    var _tag: UInt8
+    var _mask: UInt8
+    """One-hot generation bit used by Apple event availability masks."""
 
     # ===--------------------------------------------------------------------===
     # Lifetime methods
     # ===--------------------------------------------------------------------===
+
+    @doc_hidden
+    def __init__(out self, *, _mask: UInt8):
+        self._mask = _mask
 
     @staticmethod
     def host() -> Self:
@@ -127,7 +131,6 @@ struct Cpu(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
 # ===------------------------------------------------------------------------===
 
 
-@fieldwise_init
 struct Architecture(
     Equatable,
     ImplicitlyCopyable,
@@ -138,29 +141,33 @@ struct Architecture(
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime I386 = Self(0)
-    comptime X86_64 = Self(1)
-    comptime Arm = Self(2)
-    comptime Arm64 = Self(3)
+    comptime I386 = Self(_value=0)
+    comptime X86_64 = Self(_value=1)
+    comptime Arm = Self(_value=2)
+    comptime Arm64 = Self(_value=3)
 
     # ===--------------------------------------------------------------------===
     # Fields
     # ===--------------------------------------------------------------------===
 
-    var _inner: UInt32
+    var _value: UInt32
+
+    @doc_hidden
+    def __init__(out self, *, _value: UInt32):
+        self._value = _value
 
     # ===--------------------------------------------------------------------===
     # Writable methods
     # ===--------------------------------------------------------------------===
 
     def write_to(self, mut writer: Some[Writer]):
-        if self._inner == Self.I386._inner:
+        if self._value == Self.I386._value:
             writer.write("i386")
-        elif self._inner == Self.X86_64._inner:
+        elif self._value == Self.X86_64._value:
             writer.write("x86_64")
-        elif self._inner == Self.Arm._inner:
+        elif self._value == Self.Arm._value:
             writer.write("arm")
-        elif self._inner == Self.Arm64._inner:
+        elif self._value == Self.Arm64._value:
             writer.write("arm64")
         else:
             self.write_repr_to(writer)
