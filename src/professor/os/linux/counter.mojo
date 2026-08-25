@@ -219,21 +219,15 @@ def _open_event(
     config.set_disabled(disabled)
     config.set_exclude_idle(counter_config.exclude_idle)
 
-    config.set_exclude_user(
-        not counter_config.mode.includes(CountMode.Userspace)
-    )
-    config.set_exclude_kernel(
-        not counter_config.mode.includes(CountMode.Kernel)
-    )
-    config.set_exclude_hv(
-        not counter_config.mode.includes(CountMode.Hypervisor)
-    )
+    config.set_exclude_user(not (CountMode.Userspace in counter_config.mode))
+    config.set_exclude_kernel(not (CountMode.Kernel in counter_config.mode))
+    config.set_exclude_hv(not (CountMode.Hypervisor in counter_config.mode))
 
     config.set_exclude_host(
-        not counter_config.virtualization.includes(Virtualization.Host)
+        not (Virtualization.Host in counter_config.virtualization)
     )
     config.set_exclude_guest(
-        not counter_config.virtualization.includes(Virtualization.Guest)
+        not (Virtualization.Guest in counter_config.virtualization)
     )
 
     var fd = perf_event_open(

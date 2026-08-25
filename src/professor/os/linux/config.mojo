@@ -27,8 +27,8 @@ struct CountMode(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     def __or__(self, other: Self) -> Self:
         return Self(unsafe_mask=self._mask | other._mask)
 
-    def includes(self, mode: Self) -> Bool:
-        return (self._mask & mode._mask) == mode._mask
+    def __contains__(self, other: Self) -> Bool:
+        return (self._mask & other._mask) == other._mask
 
 
 struct Virtualization(
@@ -47,8 +47,8 @@ struct Virtualization(
     def __or__(self, other: Self) -> Self:
         return Self(unsafe_mask=self._mask | other._mask)
 
-    def includes(self, context: Self) -> Bool:
-        return (self._mask & context._mask) == context._mask
+    def __contains__(self, other: Self) -> Bool:
+        return (self._mask & other._mask) == other._mask
 
 
 struct CounterConfig(Copyable, Writable):
