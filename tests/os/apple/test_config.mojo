@@ -7,6 +7,7 @@ from std.testing import TestSuite
 
 from professor.os.apple import (
     ConfigBuilder,
+    Classes,
     Database,
     AppleEvent,
     PortableEvent,
@@ -22,6 +23,15 @@ def test_config_starts_with_no_events() raises:
     var db = Database()
     var cfg = ConfigBuilder(db)
     assert_equal(cfg.events_count(), 0)
+
+
+def test_classes_can_be_combined() raises:
+    var classes = Classes.Fixed | Classes.Configurable
+
+    assert_true(Classes.Fixed in classes)
+    assert_true(Classes.Configurable in classes)
+    assert_true((Classes.Fixed | Classes.Configurable) in classes)
+    assert_true(Classes.Power not in classes)
 
 
 def test_config_add_event() raises:

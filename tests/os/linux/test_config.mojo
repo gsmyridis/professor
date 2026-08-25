@@ -16,6 +16,9 @@ def test_flags_can_be_combined() raises:
         flags.value,
         Flag.CloseOnExec.value | Flag.ContainerGroup.value,
     )
+    assert_true(Flag.CloseOnExec in flags)
+    assert_true(Flag.ContainerGroup in flags)
+    assert_false(Flag.Output in flags)
 
 
 def test_counter_configs_are_independent() raises:
@@ -28,15 +31,15 @@ def test_counter_configs_are_independent() raises:
     )
 
     assert_equal(userspace.event, PerfEvent.CpuCycles)
-    assert_true(userspace.mode.includes(CountMode.Userspace))
-    assert_false(userspace.mode.includes(CountMode.Kernel))
+    assert_true(CountMode.Userspace in userspace.mode)
+    assert_false(CountMode.Kernel in userspace.mode)
     assert_false(userspace.exclude_idle)
 
     assert_equal(system.event, PerfEvent.Instructions)
-    assert_true(system.mode.includes(CountMode.Userspace))
-    assert_true(system.mode.includes(CountMode.Kernel))
-    assert_true(system.virtualization.includes(Virtualization.Host))
-    assert_true(system.virtualization.includes(Virtualization.Guest))
+    assert_true(CountMode.Userspace in system.mode)
+    assert_true(CountMode.Kernel in system.mode)
+    assert_true(Virtualization.Host in system.virtualization)
+    assert_true(Virtualization.Guest in system.virtualization)
     assert_true(system.exclude_idle)
 
 
