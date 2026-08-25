@@ -21,19 +21,26 @@ comptime Bytes = DataSize[DataSizeUnit.Byte]
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct TimeUnit(Equatable, ImplicitlyCopyable, Writable):
     """A time unit and its scale in canonical nanoseconds."""
 
-    var code: Int
+    var _value: Int
     var scale: UInt64
     var symbol: StaticString
 
-    comptime Nanos = Self(0, 1, "ns")
-    comptime Micros = Self(1, 1_000, "us")
-    comptime Millis = Self(2, 1_000_000, "ms")
-    comptime Seconds = Self(3, 1_000_000_000, "s")
-    comptime Minutes = Self(4, 60_000_000_000, "min")
+    comptime Nanos = Self(_value=0, _scale=1, _symbol="ns")
+    comptime Micros = Self(_value=1, _scale=1_000, _symbol="us")
+    comptime Millis = Self(_value=2, _scale=1_000_000, _symbol="ms")
+    comptime Seconds = Self(_value=3, _scale=1_000_000_000, _symbol="s")
+    comptime Minutes = Self(_value=4, _scale=60_000_000_000, _symbol="min")
+
+    @doc_hidden
+    def __init__(
+        out self, *, _value: Int, _scale: UInt64, _symbol: StaticString
+    ):
+        self._value = _value
+        self.scale = _scale
+        self.symbol = _symbol
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.symbol)
@@ -99,19 +106,26 @@ struct Time[unit: TimeUnit = TimeUnit.Nanos](
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct CountUnit(Equatable, ImplicitlyCopyable, Writable):
     """An event-count unit and its scale in individual events."""
 
-    var code: Int
+    var _value: Int
     var scale: UInt64
     var symbol: StaticString
     """The SI prefix, empty for individual events."""
 
-    comptime Single = Self(0, 1, "")
-    comptime Thousand = Self(1, 1_000, "k")
-    comptime Million = Self(2, 1_000_000, "Mil")
-    comptime Billion = Self(3, 1_000_000_000, "Bil")
+    comptime Single = Self(_value=0, _scale=1, _symbol="")
+    comptime Thousand = Self(_value=1, _scale=1_000, _symbol="k")
+    comptime Million = Self(_value=2, _scale=1_000_000, _symbol="Mil")
+    comptime Billion = Self(_value=3, _scale=1_000_000_000, _symbol="Bil")
+
+    @doc_hidden
+    def __init__(
+        out self, *, _value: Int, _scale: UInt64, _symbol: StaticString
+    ):
+        self._value = _value
+        self.scale = _scale
+        self.symbol = _symbol
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.symbol)
@@ -177,19 +191,26 @@ struct Count[
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct DataSizeUnit(Equatable, ImplicitlyCopyable, Writable):
     """An SI data-size unit and its scale in canonical bytes."""
 
-    var code: Int
+    var _value: Int
     var scale: UInt64
     var symbol: StaticString
 
-    comptime Byte = Self(0, 1, "B")
-    comptime Kilobyte = Self(1, 1_000, "kB")
-    comptime Megabyte = Self(2, 1_000_000, "MB")
-    comptime Gigabyte = Self(3, 1_000_000_000, "GB")
-    comptime Terabyte = Self(4, 1_000_000_000_000, "TB")
+    comptime Byte = Self(_value=0, _scale=1, _symbol="B")
+    comptime Kilobyte = Self(_value=1, _scale=1_000, _symbol="kB")
+    comptime Megabyte = Self(_value=2, _scale=1_000_000, _symbol="MB")
+    comptime Gigabyte = Self(_value=3, _scale=1_000_000_000, _symbol="GB")
+    comptime Terabyte = Self(_value=4, _scale=1_000_000_000_000, _symbol="TB")
+
+    @doc_hidden
+    def __init__(
+        out self, *, _value: Int, _scale: UInt64, _symbol: StaticString
+    ):
+        self._value = _value
+        self.scale = _scale
+        self.symbol = _symbol
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(self.symbol)

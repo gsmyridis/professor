@@ -15,17 +15,18 @@ comptime Config = Attributes
 struct CountMode(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Execution modes included in an event's count."""
 
-    comptime Userspace = Self(unsafe_mask=UInt8(1))
-    comptime Kernel = Self(unsafe_mask=UInt8(2))
-    comptime Hypervisor = Self(unsafe_mask=UInt8(4))
+    comptime Userspace = Self(_mask=UInt8(1))
+    comptime Kernel = Self(_mask=UInt8(2))
+    comptime Hypervisor = Self(_mask=UInt8(4))
 
     var _mask: UInt8
 
-    def __init__(out self, *, unsafe_mask: UInt8):
-        self._mask = unsafe_mask
+    @doc_hidden
+    def __init__(out self, *, _mask: UInt8):
+        self._mask = _mask
 
     def __or__(self, other: Self) -> Self:
-        return Self(unsafe_mask=self._mask | other._mask)
+        return Self(_mask=self._mask | other._mask)
 
     def __contains__(self, other: Self) -> Bool:
         return (self._mask & other._mask) == other._mask
@@ -36,16 +37,17 @@ struct Virtualization(
 ):
     """Virtualization contexts included in an event's count."""
 
-    comptime Host = Self(unsafe_mask=UInt8(1))
-    comptime Guest = Self(unsafe_mask=UInt8(2))
+    comptime Host = Self(_mask=UInt8(1))
+    comptime Guest = Self(_mask=UInt8(2))
 
     var _mask: UInt8
 
-    def __init__(out self, *, unsafe_mask: UInt8):
-        self._mask = unsafe_mask
+    @doc_hidden
+    def __init__(out self, *, _mask: UInt8):
+        self._mask = _mask
 
     def __or__(self, other: Self) -> Self:
-        return Self(unsafe_mask=self._mask | other._mask)
+        return Self(_mask=self._mask | other._mask)
 
     def __contains__(self, other: Self) -> Bool:
         return (self._mask & other._mask) == other._mask
@@ -97,7 +99,6 @@ struct ProcessId(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Calling process."""
 
 
-@fieldwise_init
 struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Flags controlling how `perf_event_open` creates an event.
 
@@ -105,13 +106,13 @@ struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     rather than the event measured by `PerfEventAttr`.
     """
 
-    var value: UInt32
+    var _mask: UInt32
     """The raw bit mask passed as the syscall's `flags` argument."""
 
-    comptime NoFlag = Self(0)
+    comptime NoFlag = Self(_mask=0)
     """Empty flag."""
 
-    comptime CloseOnExec = Self(PERF_FLAG_FD_CLOEXEC)
+    comptime CloseOnExec = Self(_mask=PERF_FLAG_FD_CLOEXEC)
     """Close the returned event file descriptor during `execve`.
 
     The flag is applied atomically when the descriptor is created. This avoids
@@ -119,21 +120,21 @@ struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     another thread concurrently calls `fork` followed by `execve`.
     """
 
-    comptime NoGroup = Self(PERF_FLAG_FD_NO_GROUP)
+    comptime NoGroup = Self(_mask=PERF_FLAG_FD_NO_GROUP)
     """Do not use `group_fd` to place this event in an event group.
 
     When combined with `Output`, `group_fd` is still used as the event whose
     mmap buffer receives this event's sampled output.
     """
 
-    comptime Output = Self(PERF_FLAG_FD_OUTPUT)
+    comptime Output = Self(_mask=PERF_FLAG_FD_OUTPUT)
     """Redirect sampled output to the mmap buffer belonging to `group_fd`.
 
     The `perf_event_open(2)` man page documents this facility as broken since
     Linux 2.6.35.
     """
 
-    comptime ContainerGroup = Self(PERF_FLAG_PID_CGROUP)
+    comptime ContainerGroup = Self(_mask=PERF_FLAG_PID_CGROUP)
     """Restrict a system-wide event to tasks in a cgroup.
 
     With this flag, `pid` must be a file descriptor opened on the cgroup's
@@ -141,8 +142,12 @@ struct Flag(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     monitoring may require additional permissions.
     """
 
+    @doc_hidden
+    def __init__(out self, *, _mask: UInt32):
+        self._mask = _mask
+
     def __or__(self, other: Self) -> Self:
-        return Self(self.value | other.value)
+        return Self(_mask=self._mask | other._mask)
 
     def __contains__(self, other: Self) -> Bool:
-        return (self.value & other.value) == other.value
+        return (self._mask & other._mask) == other._mask

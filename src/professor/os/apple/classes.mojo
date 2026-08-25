@@ -11,16 +11,16 @@ struct Classes(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     # Aliases
     # ===--------------------------------------------------------------------===
 
-    comptime Fixed = Self(unsafe_mask=KPC_CLASS_FIXED_MASK)
+    comptime Fixed = Self(_mask=KPC_CLASS_FIXED_MASK)
     """Fixed counters: they always measure the same events."""
 
-    comptime Configurable = Self(unsafe_mask=KPC_CLASS_CONFIGURABLE_MASK)
+    comptime Configurable = Self(_mask=KPC_CLASS_CONFIGURABLE_MASK)
     """Counters that can be configured for what events to count."""
 
-    comptime Power = Self(unsafe_mask=KPC_CLASS_POWER_MASK)
+    comptime Power = Self(_mask=KPC_CLASS_POWER_MASK)
     """Counters that count power related information."""
 
-    comptime RawPMU = Self(unsafe_mask=KPC_CLASS_RAWPMU_MASK)
+    comptime RawPMU = Self(_mask=KPC_CLASS_RAWPMU_MASK)
 
     # ===--------------------------------------------------------------------===
     # Field
@@ -32,11 +32,12 @@ struct Classes(Equatable, ImplicitlyCopyable, RegisterPassable, Writable):
     # Methods
     # ===--------------------------------------------------------------------===
 
-    def __init__(out self, *, unsafe_mask: UInt32):
-        self._mask = unsafe_mask
+    @doc_hidden
+    def __init__(out self, *, _mask: UInt32):
+        self._mask = _mask
 
     def __or__(self, other: Self) -> Self:
-        return Self(unsafe_mask=self._mask | other._mask)
+        return Self(_mask=self._mask | other._mask)
 
     def __contains__(self, other: Self) -> Bool:
         return (self._mask & other._mask) == other._mask

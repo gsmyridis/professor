@@ -92,7 +92,7 @@ struct Database(Movable):
 
     def architecture(self) -> Architecture:
         """Returns the CPU architecture this database is running on."""
-        return Architecture(self._ptr[].architecture)
+        return Architecture(_value=self._ptr[].architecture)
 
     # ===--------------------------------------------------------------------===
     # Aliases methods

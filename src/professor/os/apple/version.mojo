@@ -8,7 +8,6 @@ from .sys.kperf import (
 )
 
 
-@fieldwise_init
 struct Version(
     RegisterPassable,
     Writable,
@@ -19,10 +18,10 @@ struct Version(
     # Aliases
     # ===------------------------------------------------------------------===#
 
-    comptime IntelV3 = Self(KPC_PMU_INTEL_V3)
-    comptime ArmApple = Self(KPC_PMU_ARM_APPLE)
-    comptime IntelV2 = Self(KPC_PMU_INTEL_V2)
-    comptime ArmV2 = Self(KPC_PMU_ARM_V2)
+    comptime IntelV3 = Self(_value=KPC_PMU_INTEL_V3)
+    comptime ArmApple = Self(_value=KPC_PMU_ARM_APPLE)
+    comptime IntelV2 = Self(_value=KPC_PMU_INTEL_V2)
+    comptime ArmV2 = Self(_value=KPC_PMU_ARM_V2)
 
     # ===------------------------------------------------------------------===#
     # Field
@@ -34,12 +33,16 @@ struct Version(
     # Lifetime methods
     # ===------------------------------------------------------------------===#
 
+    @doc_hidden
+    def __init__(out self, *, _value: UInt32):
+        self._value = _value
+
     def __init__(out self) raises:
         var version = kpc_pmu_version()
         if version == KPC_PMU_ERROR:
             raise Error("failed to get KPC PMU version")
 
-        return Self(version)
+        return Self(_value=version)
 
     # ===------------------------------------------------------------------===#
     # Writable
