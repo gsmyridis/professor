@@ -1,7 +1,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
-pixi.toml
+pixi.lock
 
 # Conda
 .conda/
