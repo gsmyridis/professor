@@ -202,7 +202,7 @@ def test_apple_event_id_lookup_fields_match_framework_getters() raises:
     assert_equal(
         kpep_db_event(
             db.ptr,
-            inst_name.as_c_string_slice().unsafe_ptr(),
+            inst_name.as_c_string_slice().ptr(),
             Pointer(to=inst),
         ),
         0,
@@ -231,7 +231,7 @@ def test_config_fields_match_framework_getters_after_add_event() raises:
     assert_equal(
         kpep_db_event(
             db.ptr,
-            name.as_c_string_slice().unsafe_ptr(),
+            name.as_c_string_slice().ptr(),
             Pointer(to=event),
         ),
         0,

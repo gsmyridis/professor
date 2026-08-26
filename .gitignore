@@ -1,6 +1,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+pixi.lock
 
 # Conda
 .conda/
@@ -19,3 +20,6 @@ __pycache__/
 
 # Examples
 data/
+
+# Build
+build/

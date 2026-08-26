@@ -11,7 +11,7 @@ source:
     rev: a1de3dc427efcfcfc2f9be45686dd81632b49a32
 
 build:
-  number: 1
+  number: 2
   script:
     - mkdir -p ${{ PREFIX }}/lib/mojo
     - cp -R src/professor ${{ PREFIX }}/lib/mojo/

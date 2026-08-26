@@ -9,31 +9,84 @@ version = "0.1.0"
 mojo = ">=1.1.0.dev2026081405,<2"
 
 [environments]
-dev = ["dev"]
+default = ["dev"]
 examples = ["examples"]
 
 # ===------------------------------------------------------------------------===
-# Main tasks
+# Dev
 # ===------------------------------------------------------------------------===
 
-[tasks]
-build-package = """
+[feature.dev.dependencies]
+prek = ">=0.4.13,<0.5"
+rattler-build = ">=0.72.0,<0.73"
+
+[feature.dev.tasks]
+# Build a file with profiling enabled.
+build = { cmd = """
+    mkdir -p "build/$(dirname "{{ source }}")" \
+    && mojo build -D PROFESSOR_PROFILE -I src "{{ source }}" \
+        -o "build/$(dirname "{{ source }}")/$(basename "{{ source }}" .mojo)"
+""", args = ["source"] }
+
+# Clean build directory.
+clean = "rm -rf build"
+
+# Build package
+package = """
     rattler-build build \
     --recipe conda.recipe/recipe.yaml \
     -c conda-forge \
     -c https://conda.modular.com/max \
 """
 
+# Format all mojo files.
 format = "pixi run mojo format ."
 
+# Run pre-commits against all files.
+pre-commits = "prek run --all-files"
+
+# Build examples.
+build-examples-portable = """
+    pixi run -q build examples/quickstart.mojo \
+    && pixi run -q build examples/haversine/main.mojo -- -I examples/haversine
+"""
+build-examples-apple = """
+    pixi run -q build examples/apple/measure.mojo \
+    && pixi run -q build examples/apple/sampler.mojo \
+    && pixi run -q build examples/apple/sys/kperf.mojo \
+    && pixi run -q build examples/apple/sys/kperf_data.mojo \
+    && pixi run -q build examples/apple/sys/measure.mojo \
+    && pixi run -q build examples/counters/main.mojo \
+    && pixi run -q build examples/counters/repetition.mojo -- -I examples/counters
+"""
+build-examples-linux = "pixi run -q build examples/linux/measure.mojo"
+build-examples-backend = """
+    {% if pixi.is_linux %}
+    pixi run -q build-examples-linux
+    {% elif pixi.is_osx %}
+    pixi run -q build-examples-apple
+    {% else %}
+    echo unsupported platform && exit 1
+    {% endif %}
+"""
+
+build-examples = { depends-on = [
+  "build-examples-portable",
+  "build-examples-backend",
+] }
+
+# Test docs.
 test-docs = "mojo doc -I src src/professor -o /tmp/professor-doc.json"
 
-test-profile = "mojo run -D PROFESSOR_PROFILE -I src tests/profile/test_profiler.mojo"
-test-profile-disabled = "mojo run -I src tests/profile/test_disabled.mojo"
+# Test quickstart file.
 test-quickstart = """
     mojo run -D PROFESSOR_PROFILE -I src examples/quickstart.mojo \
     && mojo run -I src examples/quickstart.mojo
 """
+
+# Unit tests.
+test-profile = "mojo run -D PROFESSOR_PROFILE -I src tests/profile/test_profiler.mojo"
+test-profile-disabled = "mojo run -I src tests/profile/test_disabled.mojo"
 
 test-report = """
     mojo run -I src tests/report/test_table.mojo \
@@ -58,9 +111,9 @@ test-kperf = """
 """
 test-backend = """
     {% if pixi.is_linux %}
-    pixi run test-perf
+    pixi run -q test-perf
     {% elif pixi.is_osx %}
-    pixi run test-kperf
+    pixi run -q test-kperf
     {% else %}
     echo unsupported platform && exit 1
     {% endif %}
@@ -70,9 +123,9 @@ test-aarch64 = """mojo run -I src tests/arch/test_aarch64.mojo"""
 test-x86 = """mojo run -I src tests/arch/test_x86.mojo"""
 test-arch = """
     {% if pixi.platform == "linux-64" or pixi.platform == "osx-64" %}
-    pixi run test-x86
+    pixi run -q test-x86
     {% elif pixi.platform == "linux-aarch64" or pixi.platform == "osx-arm64" %}
-    pixi run test-aarch64
+    pixi run -q test-aarch64
     {% else %}
     echo unsapported architecture && exit 1
     {% endif %}
@@ -89,13 +142,6 @@ test = { depends-on = [
   "test-backend",
   "test-arch",
 ] }
-
-# ===------------------------------------------------------------------------===
-# Dev
-# ===------------------------------------------------------------------------===
-
-[feature.dev.dependencies]
-prek = ">=0.4.13,<0.5"
 
 # ===------------------------------------------------------------------------===
 # Examples

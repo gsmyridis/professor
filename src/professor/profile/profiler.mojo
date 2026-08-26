@@ -109,7 +109,7 @@ struct Profiler[
     ](ref[origin] self) -> Pointer[Self._ProfilerStateType, origin]:
         return (
             rebind[Self._EnabledStorageType](self._storage)
-            .unsafe_ptr()
+            .ptr()
             .unsafe_origin_cast[origin]()
         )
 
