@@ -193,7 +193,7 @@ struct Database(Movable):
         var ev: OptionalPointer[KPEPEvent, MutUntrackedOrigin] = {}
         var res = kpep_db_event(
             self._ptr,
-            unsafe_name.unsafe_ptr().unsafe_bitcast[c_char](),
+            unsafe_name.ptr().unsafe_bitcast[c_char](),
             Pointer(to=ev),
         )
         if res != 0:
